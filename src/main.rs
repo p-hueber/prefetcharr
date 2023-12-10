@@ -1,4 +1,8 @@
+use std::time::Duration;
+
 use clap::{arg, command, Parser};
+use jellyfin_api::types::SessionInfo;
+use tokio::sync::mpsc;
 
 mod jellyfin;
 
@@ -13,20 +17,26 @@ struct Args {
     jellyfin_api_key: String,
 }
 
+pub enum Message {
+    NowPlaying(SessionInfo),
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
+    let (tx, mut rx) = mpsc::channel(1);
+
     let client = jellyfin::Client::new(args.jellyfin_url, args.jellyfin_api_key);
+    tokio::spawn(jellyfin::watch(Duration::from_secs(300), client, tx));
 
-    let sessions = client.sessions().await?;
-
-    let now_playing: Vec<_> = sessions
-        .into_iter()
-        .map(|s| (s.user_name, s.now_playing_item))
-        .collect();
-
-    println!("sessions: {now_playing:?}");
+    while let Some(msg) = rx.recv().await {
+        match msg {
+            Message::NowPlaying(now_playing) => {
+                println!("sessions: {now_playing:?}");
+            }
+        }
+    }
 
     Ok(())
 }
