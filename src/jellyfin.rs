@@ -76,7 +76,7 @@ impl Ids {
 
 #[derive(Debug)]
 pub struct NowPlaying {
-    pub tvdb: String,
+    pub tvdb: i32,
     pub episode: i32,
     pub season: i32,
 }
@@ -124,7 +124,7 @@ async fn extract(p: SessionInfo, client: &Client) -> Result<NowPlaying> {
         .ok_or_else(|| anyhow!("no tmdb id"))?;
 
     let now_playing = NowPlaying {
-        tvdb: tvdb_id.to_owned(),
+        tvdb: tvdb_id.parse()?,
         episode: episode_num,
         season: season_num,
     };
