@@ -8,7 +8,10 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(base_url: String, api_key: String) -> Self {
+    pub fn new(mut base_url: String, api_key: String) -> Self {
+        if !base_url.ends_with("/") {
+            base_url += "/";
+        }
         Self { base_url, api_key }
     }
 
