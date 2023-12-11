@@ -21,6 +21,9 @@ struct Args {
     /// Sonarr API key
     #[arg(long, value_name = "API_KEY", env = "SONARR_API_KEY")]
     sonarr_api_key: String,
+    /// Polling interval
+    #[arg(long, value_name = "SECONDS", default_value_t = 900)]
+    interval: u64,
 }
 
 pub enum Message {
@@ -34,7 +37,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (tx, mut rx) = mpsc::channel(1);
 
     let jelly_client = jellyfin::Client::new(args.jellyfin_url, args.jellyfin_api_key);
-    tokio::spawn(jellyfin::watch(Duration::from_secs(300), jelly_client, tx));
+    tokio::spawn(jellyfin::watch(
+        Duration::from_secs(args.interval),
+        jelly_client,
+        tx,
+    ));
 
     let sonarr_client = sonarr::Client::new(args.sonarr_url, args.sonarr_api_key);
 
