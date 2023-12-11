@@ -16,20 +16,20 @@ impl Client {
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let response = reqwest::get(dbg!(format!(
+        let response = reqwest::get(format!(
             "{}api/v3/{}?apikey={}",
             self.base_url, path, self.api_key
-        )))
+        ))
         .await?;
         Ok(response.json::<T>().await?)
     }
 
     pub async fn put_series(&self, series: &SeriesResource) -> Result<serde_json::Value> {
         let response = reqwest::Client::new()
-            .put(dbg!(format!(
+            .put(format!(
                 "{}api/v3/series/{}?apikey={}",
                 self.base_url, series.id, self.api_key
-            )))
+            ))
             .json(series)
             .send()
             .await?;
