@@ -21,23 +21,19 @@ impl Client {
         Self { base_url, api_key }
     }
 
-    async fn get<T: DeserializeOwned>(&self, path: &str, query: Option<&str>) -> Result<T> {
-        let query = query.unwrap_or("");
-        let response = reqwest::get(format!(
-            "{}{path}?apikey={}&{query}",
-            self.base_url, self.api_key
-        ))
-        .await?;
+    async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let response =
+            reqwest::get(format!("{}{}?apikey={}", self.base_url, path, self.api_key)).await?;
         Ok(response.json::<T>().await?)
     }
 
     async fn sessions(&self) -> Result<Vec<SessionInfo>> {
-        self.get("Sessions", None).await
+        self.get("Sessions").await
     }
 
     async fn item(&self, user_id: Uuid, item_id: Uuid) -> Result<BaseItemDto> {
         let path = format!("Users/{user_id}/Items/{item_id}");
-        self.get(path.as_str(), None).await
+        self.get(path.as_str()).await
     }
 }
 

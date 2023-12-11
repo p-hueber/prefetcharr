@@ -15,11 +15,10 @@ impl Client {
         Self { base_url, api_key }
     }
 
-    async fn get<T: DeserializeOwned>(&self, path: &str, query: Option<&str>) -> Result<T> {
-        let query = query.unwrap_or("");
+    async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let response = reqwest::get(dbg!(format!(
-            "{}api/v3/{path}?apikey={}&{query}",
-            self.base_url, self.api_key
+            "{}api/v3/{}?apikey={}",
+            self.base_url, path, self.api_key
         )))
         .await?;
         Ok(response.json::<T>().await?)
@@ -38,7 +37,7 @@ impl Client {
     }
 
     pub async fn series(&self) -> Result<Vec<SeriesResource>> {
-        self.get("series", None).await
+        self.get("series").await
     }
 
     pub async fn search_season(
