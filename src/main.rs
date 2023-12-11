@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use clap::{arg, command, Parser};
-use jellyfin_api::types::SessionInfo;
 use tokio::sync::mpsc;
 
 mod jellyfin;
@@ -18,7 +17,7 @@ struct Args {
 }
 
 pub enum Message {
-    NowPlaying(SessionInfo),
+    NowPlaying(jellyfin::NowPlaying),
 }
 
 #[tokio::main]

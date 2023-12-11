@@ -709,8 +709,10 @@ dependencies = [
  "clap",
  "jellyfin_api",
  "reqwest",
+ "serde",
  "serde_json",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
