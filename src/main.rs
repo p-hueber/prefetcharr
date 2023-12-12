@@ -1,8 +1,10 @@
 use std::{path::PathBuf, time::Duration};
 
+use anyhow::anyhow;
 use clap::{arg, command, Parser};
+use jellyfin::NowPlaying;
 use tokio::sync::mpsc;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use tracing_subscriber::EnvFilter;
 
 mod jellyfin;
@@ -57,40 +59,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     while let Some(msg) = rx.recv().await {
         match msg {
             Message::NowPlaying(np) => {
-                let series = sonarr_client.series().await.unwrap();
-                let mut series = series.into_iter().find(|s| s.tvdb_id == np.tvdb).unwrap();
-
-                info!(title = series.title.clone().unwrap_or_else(|| "?".to_string()), now_playing = ?np);
-
-                let season = series.season(np.season).unwrap();
-
-                // Fetch from the second-to-last episode so the next season is available when the
-                // last episode plays. This should allow Jellyfin to display "next episode" in time.
-                if np.episode < season.last_episode() - 1 {
-                    debug!(now_playing = ?np, season = ?season, "season is monitored already");
-                    continue;
+                if let Err(e) = process(np, &sonarr_client).await {
+                    error!(err = ?e, "Failed to process");
                 }
-
-                let next_season = series.season_mut(np.season + 1).unwrap();
-                if next_season.monitored {
-                    debug!(next_season = ?next_season, "season is monitored already");
-                    continue;
-                }
-
-                let next_season_num = next_season.season_number;
-                info!(num = next_season_num, "Searching next season");
-
-                sonarr_client
-                    .search_season(&series, next_season_num)
-                    .await
-                    .unwrap();
             }
-        }
+        };
     }
 
     Ok(())
 }
 
+async fn process(np: NowPlaying, sonarr_client: &sonarr::Client) -> anyhow::Result<()> {
+    let series = sonarr_client.series().await?;
+    let mut series = series
+        .into_iter()
+        .find(|s| s.tvdb_id == np.tvdb)
+        .ok_or_else(|| anyhow!("series not found in Sonarr"))?;
+
+    info!(title = series.title.clone().unwrap_or_else(|| "?".to_string()), now_playing = ?np);
+
+    let season = series
+        .season(np.season)
+        .ok_or_else(|| anyhow!("season not known to Sonarr"))?;
+
+    // Fetch from the second-to-last episode so the next season is available when the
+    // last episode plays. This should allow Jellyfin to display "next episode" in time.
+    if np.episode < season.last_episode() - 1 {
+        debug!(now_playing = ?np, season = ?season, "season is monitored already");
+        return Ok(());
+    }
+
+    let next_season = series
+        .season_mut(np.season + 1)
+        .ok_or_else(|| anyhow!("season not known to Sonarr"))?;
+    if next_season.monitored {
+        debug!(next_season = ?next_season, "season is monitored already");
+        return Ok(());
+    }
+
+    let next_season_num = next_season.season_number;
+    info!(num = next_season_num, "Searching next season");
+
+    sonarr_client
+        .search_season(&series, next_season_num)
+        .await?;
+
+    Ok(())
+}
 fn enable_logging(log_dir: &Option<PathBuf>) {
     if let Some(log_dir) = log_dir {
         let file_appender = tracing_appender::rolling::daily(log_dir, "prefetcharr.log");
