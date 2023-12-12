@@ -13,4 +13,7 @@ reqwest = "0"
 serde = "1"
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread", "time", "sync"] }
+tracing = "0"
+tracing-appender = "0"
+tracing-subscriber = { version = "0", features = ["env-filter"] }
 uuid = "1"

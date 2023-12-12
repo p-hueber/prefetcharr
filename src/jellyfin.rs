@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use jellyfin_api::types::{BaseItemDto, SessionInfo};
 use serde::de::DeserializeOwned;
 use tokio::sync::mpsc;
+use tracing::debug;
 use uuid::Uuid;
 
 use crate::Message;
@@ -90,7 +91,7 @@ pub async fn watch(interval: Duration, client: Client, tx: mpsc::Sender<Message>
                             .await
                             .expect("sending to event loop");
                     }
-                    Err(e) => eprintln!("Ignoring session: {e}"),
+                    Err(e) => debug!("Ignoring session: {e}"),
                 }
             }
         }
