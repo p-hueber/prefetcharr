@@ -85,7 +85,7 @@ async fn process(np: NowPlaying, sonarr_client: &sonarr::Client) -> anyhow::Resu
     // Fetch from the second-to-last episode so the next season is available when the
     // last episode plays. This should allow Jellyfin to display "next episode" in time.
     if np.episode < season.last_episode() - 1 {
-        debug!(now_playing = ?np, season = ?season, "season is monitored already");
+        debug!(now_playing = ?np, season = ?season, "ignoring early episode");
         return Ok(());
     }
 
