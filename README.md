@@ -16,3 +16,22 @@ monitoring it and initiates a season search.
 ```
 cargo install --lock --path .
 ```
+
+Or with docker compose:
+```yml
+version: '3.5'
+services:
+  prefetcharr:
+    build: https://github.com/p-hueber/prefetcharr.git
+    image: prefetcharr
+    environment:
+      - JELLYFIN_URL=http://example.com/jellyfin
+      - JELLYFIN_API_KEY=<YOUR KEY HERE>
+      - SONARR_URL=http://example.com/sonarr
+      - SONARR_API_KEY=<YOUR KEY HERE>
+      - LOG_DIR=/log
+      - RUST_LOG=prefetcharr=debug
+    volumes:
+      - /path/to/log/dir:/log
+
+```
