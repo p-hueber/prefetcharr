@@ -9,7 +9,10 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 use tracing_subscriber::EnvFilter;
 
+use crate::once::Seen;
+
 mod jellyfin;
+mod once;
 mod sonarr;
 
 #[derive(Parser)]
@@ -58,10 +61,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sonarr_client = sonarr::Client::new(args.sonarr_url, args.sonarr_api_key);
 
+    let mut seen = Seen::default();
+
     while let Some(msg) = rx.recv().await {
         match msg {
             Message::NowPlaying(np) => {
-                if let Err(e) = process(np, &sonarr_client).await {
+                if let Err(e) = process(np, &sonarr_client, &mut seen).await {
                     error!(err = ?e, "Failed to process");
                 }
             }
@@ -71,7 +76,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn process(np: NowPlaying, sonarr_client: &sonarr::Client) -> anyhow::Result<()> {
+async fn process(
+    np: NowPlaying,
+    sonarr_client: &sonarr::Client,
+    seen: &mut Seen,
+) -> anyhow::Result<()> {
     let series = sonarr_client.series().await?;
     let mut series = series
         .into_iter()
@@ -99,6 +108,11 @@ async fn process(np: NowPlaying, sonarr_client: &sonarr::Client) -> anyhow::Resu
         return Ok(());
     }
 
+    if !seen.once(&np) {
+        debug!(now_playing = ?np, "skip previously processed item");
+        return Ok(());
+    }
+
     let next_season_num = next_season.season_number;
     info!(num = next_season_num, "Searching next season");
 
@@ -108,6 +122,7 @@ async fn process(np: NowPlaying, sonarr_client: &sonarr::Client) -> anyhow::Resu
 
     Ok(())
 }
+
 fn enable_logging(log_dir: &Option<PathBuf>) {
     if let Some(log_dir) = log_dir {
         let file_appender = tracing_appender::rolling::daily(log_dir, "prefetcharr.log");
