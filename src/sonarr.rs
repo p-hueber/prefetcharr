@@ -9,7 +9,7 @@ pub struct Client {
 
 impl Client {
     pub fn new(mut base_url: String, api_key: String) -> Self {
-        if !base_url.ends_with("/") {
+        if !base_url.ends_with('/') {
             base_url += "/";
         }
         Self { base_url, api_key }
@@ -45,7 +45,7 @@ impl Client {
         series: &SeriesResource,
         season_num: i32,
     ) -> Result<serde_json::Value> {
-        let mut series = series.to_owned();
+        let mut series = series.clone();
         let season = series
             .season_mut(season_num)
             .ok_or_else(|| anyhow!("there is no season {season_num}"))?;

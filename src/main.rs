@@ -1,3 +1,5 @@
+#![warn(clippy::pedantic)]
+
 use std::{path::PathBuf, time::Duration};
 
 use anyhow::anyhow;

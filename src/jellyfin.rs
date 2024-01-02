@@ -16,7 +16,7 @@ pub struct Client {
 
 impl Client {
     pub fn new(mut base_url: String, api_key: String) -> Self {
-        if !base_url.ends_with("/") {
+        if !base_url.ends_with('/') {
             base_url += "/";
         }
         Self { base_url, api_key }
@@ -85,7 +85,7 @@ pub async fn watch(interval: Duration, client: Client, tx: mpsc::Sender<Message>
                 .into_iter()
                 .filter(|s| s.now_playing_item.is_some());
             for p in playing {
-                match extract(p, &client).await {
+                match Box::pin(extract(p, &client)).await {
                     Ok(now_playing) => {
                         tx.send(Message::NowPlaying(now_playing))
                             .await
@@ -116,8 +116,7 @@ async fn extract(p: SessionInfo, client: &Client) -> Result<NowPlaying> {
         .provider_ids
         .as_ref()
         .and_then(|p| p.get("Tvdb"))
-        .map(Option::as_ref)
-        .flatten()
+        .and_then(Option::as_ref)
         .ok_or_else(|| anyhow!("no tmdb id"))?;
 
     let now_playing = NowPlaying {
