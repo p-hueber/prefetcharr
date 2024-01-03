@@ -30,10 +30,6 @@ pub async fn search_next(
     let next_season = series
         .season_mut(np.season + 1)
         .ok_or_else(|| anyhow!("season not known to Sonarr"))?;
-    if next_season.monitored {
-        debug!(next_season = ?next_season, "season is monitored already");
-        return Ok(());
-    }
 
     if !seen.once(&np) {
         debug!(now_playing = ?np, "skip previously processed item");

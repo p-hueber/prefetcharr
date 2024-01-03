@@ -11,3 +11,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Process a given season only once. Remember this for seven days or until the
   program is restarted.
+- Do not ignore seasons that are already monitored.
+- Make sure the series is monitored when monitoring a season.
