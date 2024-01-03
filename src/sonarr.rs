@@ -45,13 +45,16 @@ impl Client {
         series: &SeriesResource,
         season_num: i32,
     ) -> Result<serde_json::Value> {
+        let series_monitored = series.monitored;
+
         let mut series = series.clone();
         let season = series
             .season_mut(season_num)
             .ok_or_else(|| anyhow!("there is no season {season_num}"))?;
 
-        if !season.monitored {
+        if !season.monitored || !series_monitored {
             season.monitored = true;
+            series.monitored = true;
             self.put_series(&series).await?;
         }
 
