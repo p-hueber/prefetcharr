@@ -22,7 +22,7 @@ Or with docker compose:
 version: '3.5'
 services:
   prefetcharr:
-    build: https://github.com/p-hueber/prefetcharr.git
+    build: https://github.com/p-hueber/prefetcharr.git#latest
     image: prefetcharr
     environment:
       - JELLYFIN_URL=http://example.com/jellyfin
