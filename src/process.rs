@@ -37,6 +37,12 @@ pub async fn search_next(
     }
 
     let next_season_num = next_season.season_number;
+
+    if next_season.statistics.episode_count == next_season.statistics.total_episode_count {
+        debug!(num = next_season_num, "skip already downloaded season");
+        return Ok(());
+    }
+
     info!(num = next_season_num, "Searching next season");
 
     sonarr_client

@@ -13,3 +13,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   program is restarted.
 - Do not ignore seasons that are already monitored.
 - Make sure the series is monitored when monitoring a season.
+- Ignore seasons that were downloaded already.
