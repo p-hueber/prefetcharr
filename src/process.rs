@@ -8,14 +8,21 @@ pub struct Actor {
     rx: mpsc::Receiver<Message>,
     sonarr_client: sonarr::Client,
     seen: Seen,
+    remaining_episodes: u8,
 }
 
 impl Actor {
-    pub fn new(rx: mpsc::Receiver<Message>, sonarr_client: sonarr::Client, seen: Seen) -> Self {
+    pub fn new(
+        rx: mpsc::Receiver<Message>,
+        sonarr_client: sonarr::Client,
+        seen: Seen,
+        remaining_episodes: u8,
+    ) -> Self {
         Self {
             rx,
             sonarr_client,
             seen,
+            remaining_episodes,
         }
     }
 }
@@ -46,9 +53,11 @@ impl Actor {
             .season(np.season)
             .ok_or_else(|| anyhow!("season not known to Sonarr"))?;
 
-        // Fetch from the second-to-last episode so the next season is available when the
-        // last episode plays. This should allow Jellyfin to display "next episode" in time.
-        if np.episode < season.last_episode() - 1 {
+        if np.episode
+            <= season
+                .last_episode()
+                .saturating_sub(i32::from(self.remaining_episodes))
+        {
             debug!(now_playing = ?np, season = ?season, "ignoring early episode");
             return Ok(());
         }
