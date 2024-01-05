@@ -3,9 +3,8 @@
 use std::{path::PathBuf, time::Duration};
 
 use clap::{arg, command, Parser};
-use process::search_next;
 use tokio::sync::mpsc;
-use tracing::{error, info};
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 use crate::once::Seen;
@@ -48,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     enable_logging(&args.log_dir);
 
-    let (tx, mut rx) = mpsc::channel(1);
+    let (tx, rx) = mpsc::channel(1);
 
     info!("Start watching Jellyfin sessions");
 
@@ -60,18 +59,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
 
     let sonarr_client = sonarr::Client::new(args.sonarr_url, args.sonarr_api_key);
+    let seen = Seen::default();
+    let mut actor = process::Actor::new(rx, sonarr_client, seen);
 
-    let mut seen = Seen::default();
-
-    while let Some(msg) = rx.recv().await {
-        match msg {
-            Message::NowPlaying(np) => {
-                if let Err(e) = search_next(np, &sonarr_client, &mut seen).await {
-                    error!(err = ?e, "Failed to process");
-                }
-            }
-        };
-    }
+    actor.process().await;
 
     Ok(())
 }
