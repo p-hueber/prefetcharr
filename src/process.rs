@@ -62,9 +62,13 @@ impl Actor {
             return Ok(());
         }
 
-        let next_season = series
-            .season_mut(np.season + 1)
-            .ok_or_else(|| anyhow!("season not known to Sonarr"))?;
+        let Some(next_season) = series.season_mut(np.season + 1) else {
+            info!("Next season not known, monitor new seasons instead");
+            series.monitor_new_items = Some(sonarr::NewItemMonitorTypes::All);
+            series.monitored = true;
+            self.sonarr_client.put_series(&series).await?;
+            return Ok(());
+        };
 
         if !self.seen.once(&np) {
             debug!(now_playing = ?np, "skip previously processed item");

@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New command-line option `--remaining-episodes` to control when the next
   season is searched.
+- Set the new "monitor new seasons" option of Sonarr v4 when watching the
+  last season.
 
 ### Changed
 
