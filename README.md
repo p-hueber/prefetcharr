@@ -25,12 +25,22 @@ services:
     build: https://github.com/p-hueber/prefetcharr.git#latest
     image: prefetcharr
     environment:
+      # Jellyfin baseurl
       - JELLYFIN_URL=http://example.com/jellyfin
+      # Jellyfin API key
       - JELLYFIN_API_KEY=<YOUR KEY HERE>
+      # Sonarr baseurl
       - SONARR_URL=http://example.com/sonarr
+      # Sonarr API key
       - SONARR_API_KEY=<YOUR KEY HERE>
+      # Logging directory
       - LOG_DIR=/log
+      # Log level
       - RUST_LOG=prefetcharr=debug
+      # Polling interval in seconds
+      - INTERVAL=900
+      # Minimum remaining episodes before a search
+      - REMAINING_EPISODES=2
     volumes:
       - /path/to/log/dir:/log
 

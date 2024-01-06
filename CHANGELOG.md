@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New command-line option `--remaining-episodes` to control when the next
   season is searched.
 
+### Changed
+
+- Dockerfile exposes all command-line arguments via environment variables.
+
 
 ## [0.2.0] - 2024-01-03
 
