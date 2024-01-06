@@ -77,20 +77,18 @@ impl Client {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SeasonStatisticsResource {
-    #[serde(rename = "sizeOnDisk")]
     pub size_on_disk: i64,
-    #[serde(rename = "episodeCount")]
     pub episode_count: i32,
-    #[serde(rename = "totalEpisodeCount")]
     pub total_episode_count: i32,
     #[serde(flatten)]
     other: serde_json::Value,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SeasonResource {
-    #[serde(rename = "seasonNumber")]
     pub season_number: i32,
     pub monitored: bool,
     pub statistics: SeasonStatisticsResource,
@@ -105,10 +103,10 @@ impl SeasonResource {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SeriesResource {
     pub id: i32,
     pub title: Option<String>,
-    #[serde(rename = "tvdbId")]
     pub tvdb_id: i32,
     pub monitored: bool,
     pub seasons: Vec<SeasonResource>,
