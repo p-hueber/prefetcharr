@@ -104,11 +104,20 @@ impl SeasonResource {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub enum NewItemMonitorTypes {
+    All,
+    None,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SeriesResource {
     pub id: i32,
     pub title: Option<String>,
     pub tvdb_id: i32,
     pub monitored: bool,
+    // optional for v3 compatibility
+    pub monitor_new_items: Option<NewItemMonitorTypes>,
     pub seasons: Vec<SeasonResource>,
     #[serde(flatten)]
     other: serde_json::Value,
