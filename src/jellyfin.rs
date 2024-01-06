@@ -40,9 +40,9 @@ impl Client {
 
 #[derive(Debug)]
 struct Ids {
-    user_id: Uuid,
-    series_id: Uuid,
-    season_id: Uuid,
+    user: Uuid,
+    series: Uuid,
+    season: Uuid,
 }
 
 impl TryFrom<SessionInfo> for Ids {
@@ -64,9 +64,9 @@ impl Ids {
         let season_id = np.season_id.ok_or_else(|| anyhow!("missing season_id"))?;
 
         Ok(Self {
-            user_id,
-            series_id,
-            season_id,
+            user: user_id,
+            series: series_id,
+            season: season_id,
         })
     }
 }
@@ -107,9 +107,9 @@ async fn extract(p: SessionInfo, client: &Client) -> Result<NowPlaying> {
         .ok_or_else(|| anyhow!("no episode"))?;
     let ids = Ids::try_from(p)?;
 
-    let series = client.item(ids.user_id, ids.series_id).await?;
+    let series = client.item(ids.user, ids.series).await?;
 
-    let season = client.item(ids.user_id, ids.season_id).await?;
+    let season = client.item(ids.user, ids.season).await?;
     let season_num = season.index_number.ok_or_else(|| anyhow!("no season"))?;
 
     let tvdb_id = series
