@@ -1,4 +1,4 @@
-FROM rust:1.74.1
+FROM rust:1.75.0
 
 COPY ./ ./
 
