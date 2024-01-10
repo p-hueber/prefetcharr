@@ -14,7 +14,7 @@ _Sonarr_ to monitor it and initiate a season search.
 
 [Install Rust](https://www.rust-lang.org/tools/install), clone this repo and run
 ```
-cargo install --lock --path .
+cargo install --locked --path .
 ```
 
 Or with docker compose:
