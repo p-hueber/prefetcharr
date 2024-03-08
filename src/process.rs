@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
-use crate::{jellyfin::NowPlaying, once::Seen, sonarr, Message};
+use crate::{media_server::NowPlaying, once::Seen, sonarr, Message};
 
 pub struct Actor {
     rx: mpsc::Receiver<Message>,

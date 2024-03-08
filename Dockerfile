@@ -5,7 +5,8 @@ COPY ./ ./
 RUN cargo build --release
 
 CMD ["bash", "-c", "./target/release/prefetcharr \
-  --jellyfin-url \"${JELLYFIN_URL}\" \
+  --media-server-type \"${MEDIA_SERVER_TYPE}\" \
+  --media-server-url \"${MEDIA_SERVER_URL}\" \
   --sonarr-url \"${SONARR_URL}\" \
   --log-dir \"${LOG_DIR}\" \
   --interval \"${INTERVAL:-900}\" \

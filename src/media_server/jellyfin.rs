@@ -9,6 +9,8 @@ use uuid::Uuid;
 
 use crate::Message;
 
+use super::NowPlaying;
+
 pub struct Client {
     base_url: String,
     api_key: String,
@@ -69,13 +71,6 @@ impl Ids {
             season: season_id,
         })
     }
-}
-
-#[derive(Debug)]
-pub struct NowPlaying {
-    pub tvdb: i32,
-    pub episode: i32,
-    pub season: i32,
 }
 
 pub async fn watch(interval: Duration, client: Client, tx: mpsc::Sender<Message>) {
