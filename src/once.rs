@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::jellyfin::NowPlaying;
+use crate::media_server::NowPlaying;
 
 const RETAIN_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 7);
 
@@ -68,7 +68,7 @@ mod test {
     use std::time::{Duration, Instant};
 
     use crate::{
-        jellyfin::NowPlaying,
+        media_server::NowPlaying,
         once::{Entry, Seen},
     };
 

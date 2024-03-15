@@ -2,27 +2,39 @@
 
 use std::{path::PathBuf, time::Duration};
 
-use clap::{arg, command, Parser};
+use clap::{arg, command, Parser, ValueEnum};
 use tokio::sync::mpsc;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 use crate::once::Seen;
 
-mod jellyfin;
+mod media_server;
 mod once;
 mod process;
 mod sonarr;
 
+use media_server::{emby, jellyfin};
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Jellyfin baseurl
-    #[arg(long, value_name = "URL")]
-    jellyfin_url: String,
-    /// Jellyfin API key
-    #[arg(long, value_name = "API_KEY", env = "JELLYFIN_API_KEY")]
-    jellyfin_api_key: String,
+    /// Media server type
+    #[arg(long, default_value = "jellyfin")]
+    media_server_type: MediaServer,
+    /// Jellyfin/Emby baseurl
+    #[arg(long, alias = "jellyfin-url", value_name = "URL")]
+    media_server_url: String,
+    /// Jellyfin/Emby API key
+    #[arg(
+        long,
+        value_name = "API_KEY",
+        required_unless_present = "jellyfin_api_key",
+        env = "MEDIA_SERVER_API_KEY"
+    )]
+    media_server_api_key: Option<String>,
+    #[arg(long, hide = true, env = "JELLYFIN_API_KEY")]
+    jellyfin_api_key: Option<String>,
     /// Sonarr baseurl
     #[arg(long, value_name = "URL")]
     sonarr_url: String,
@@ -40,8 +52,14 @@ struct Args {
     remaining_episodes: u8,
 }
 
+#[derive(Clone, Debug, ValueEnum)]
+enum MediaServer {
+    Jellyfin,
+    Emby,
+}
+
 pub enum Message {
-    NowPlaying(jellyfin::NowPlaying),
+    NowPlaying(media_server::NowPlaying),
 }
 
 #[tokio::main]
@@ -52,14 +70,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (tx, rx) = mpsc::channel(1);
 
-    info!("Start watching Jellyfin sessions");
+    // backward compat
+    let media_server_api_key = args
+        .media_server_api_key
+        .or(args.jellyfin_api_key)
+        .expect("using value enforced via clap");
 
-    let jelly_client = jellyfin::Client::new(args.jellyfin_url, args.jellyfin_api_key);
-    tokio::spawn(jellyfin::watch(
-        Duration::from_secs(args.interval),
-        jelly_client,
-        tx,
-    ));
+    match args.media_server_type {
+        MediaServer::Jellyfin => {
+            info!("Start watching Jellyfin sessions");
+            let jelly_client = jellyfin::Client::new(args.media_server_url, media_server_api_key);
+            tokio::spawn(jellyfin::watch(
+                Duration::from_secs(args.interval),
+                jelly_client,
+                tx,
+            ));
+        }
+        MediaServer::Emby => {
+            info!("Start watching Emby sessions");
+            let emby_client = emby::Client::new(args.media_server_url, media_server_api_key);
+            tokio::spawn(emby::watch(
+                Duration::from_secs(args.interval),
+                emby_client,
+                tx,
+            ));
+        }
+    }
 
     let sonarr_client = sonarr::Client::new(args.sonarr_url, args.sonarr_api_key);
     let seen = Seen::default();

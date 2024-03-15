@@ -10,10 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Specify a minimum supported rust version.
+- Add Emby support.
 
 ### Changed
 
 - Update dependendencies.
+- CLI interface changed to accomodate Emby.
+
+### Deprecated
+
+- `--jellyfin-url`, `--jellyfin-api-key` and `JELLYFIN_API_KEY`
 
 
 ## [0.3.0] - 2024-01-07

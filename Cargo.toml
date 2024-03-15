@@ -10,7 +10,7 @@ rust-version = "1.70.0"
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive", "env"] }
+clap = { version = "4", features = ["derive", "env", "string"] }
 jellyfin_api = "10.8.13-1"
 reqwest = "0"
 serde = "1"
