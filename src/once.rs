@@ -4,13 +4,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::media_server::NowPlaying;
+use crate::media_server::{NowPlaying, Series};
 
 const RETAIN_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 7);
 
 #[derive(PartialEq, Eq, Hash)]
 struct Season {
-    tvdb: i32,
+    series: Series,
     season: i32,
 }
 
@@ -33,11 +33,11 @@ impl Hash for Entry {
     }
 }
 
-impl From<&NowPlaying> for Entry {
-    fn from(value: &NowPlaying) -> Self {
+impl From<NowPlaying> for Entry {
+    fn from(value: NowPlaying) -> Self {
         Self {
             season: Season {
-                tvdb: value.tvdb,
+                series: value.series,
                 season: value.season,
             },
             touched: Instant::now(),
@@ -68,7 +68,7 @@ mod test {
     use std::time::{Duration, Instant};
 
     use crate::{
-        media_server::NowPlaying,
+        media_server::{NowPlaying, Series},
         once::{Entry, Seen},
     };
 
@@ -76,99 +76,99 @@ mod test {
     fn twice() {
         let mut seen = Seen::default();
         let np = NowPlaying {
-            tvdb: 1,
+            series: Series::Tvdb(1),
             episode: 2,
             season: 3,
         };
-        assert!(seen.once(&np));
-        assert!(!seen.once(&np));
+        assert!(seen.once(np.clone()));
+        assert!(!seen.once(np));
     }
 
     #[test]
     fn prune_old() {
         let mut seen = Seen::default();
         let np = NowPlaying {
-            tvdb: 1,
+            series: Series::Tvdb(1),
             episode: 2,
             season: 3,
         };
 
-        let mut old = Entry::from(&np);
+        let mut old = Entry::from(np.clone());
         old.touched = Instant::now().checked_sub(super::RETAIN_DURATION).unwrap();
 
         assert!(seen.once(old));
-        assert!(seen.once(&np));
+        assert!(seen.once(np));
     }
 
     #[test]
     fn touch() {
         let mut seen = Seen::default();
         let np = NowPlaying {
-            tvdb: 1,
+            series: Series::Tvdb(1),
             episode: 2,
             season: 3,
         };
 
-        let mut old = Entry::from(&np);
+        let mut old = Entry::from(np.clone());
         old.touched = (Instant::now() + Duration::from_millis(100))
             .checked_sub(super::RETAIN_DURATION)
             .unwrap();
 
         assert!(seen.once(old));
-        assert!(!seen.once(&np));
+        assert!(!seen.once(np.clone()));
 
         std::thread::sleep(Duration::from_millis(100));
-        assert!(!seen.once(&np));
+        assert!(!seen.once(np));
     }
 
     #[test]
     fn ignore_episode() {
         let mut seen = Seen::default();
         let np1 = NowPlaying {
-            tvdb: 1,
+            series: Series::Tvdb(1),
             episode: 2,
             season: 3,
         };
         let np2 = NowPlaying {
-            tvdb: 1,
+            series: Series::Tvdb(1),
             episode: 4,
             season: 3,
         };
-        assert!(seen.once(&np1));
-        assert!(!seen.once(&np2));
+        assert!(seen.once(np1.clone()));
+        assert!(!seen.once(np2));
     }
 
     #[test]
     fn different_season() {
         let mut seen = Seen::default();
         let np1 = NowPlaying {
-            tvdb: 1,
+            series: Series::Tvdb(1),
             episode: 1,
             season: 1,
         };
         let np2 = NowPlaying {
-            tvdb: 1,
+            series: Series::Tvdb(1),
             episode: 1,
             season: 2,
         };
-        assert!(seen.once(&np1));
-        assert!(seen.once(&np2));
+        assert!(seen.once(np1.clone()));
+        assert!(seen.once(np2));
     }
 
     #[test]
     fn different_series() {
         let mut seen = Seen::default();
         let np1 = NowPlaying {
-            tvdb: 1,
+            series: Series::Tvdb(1),
             episode: 1,
             season: 1,
         };
         let np2 = NowPlaying {
-            tvdb: 2,
+            series: Series::Tvdb(2),
             episode: 1,
             season: 1,
         };
-        assert!(seen.once(&np1));
-        assert!(seen.once(&np2));
+        assert!(seen.once(np1.clone()));
+        assert!(seen.once(np2));
     }
 }

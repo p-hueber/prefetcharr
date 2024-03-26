@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use jellyfin_api::types::{BaseItemDto, SessionInfo};
 use serde::de::DeserializeOwned;
 use tokio::sync::mpsc;
@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::Message;
 
-use super::NowPlaying;
+use super::{NowPlaying, Series};
 
 pub struct Client {
     base_url: String,
@@ -111,11 +111,16 @@ async fn extract(p: SessionInfo, client: &Client) -> Result<NowPlaying> {
         .provider_ids
         .as_ref()
         .and_then(|p| p.get("Tvdb"))
-        .and_then(Option::as_ref)
-        .ok_or_else(|| anyhow!("no tmdb id"))?;
+        .and_then(Option::as_ref);
+
+    let series = match (tvdb_id, series.name) {
+        (Some(tvdb), _) => Series::Tvdb(tvdb.parse()?),
+        (None, Some(title)) => Series::Title(title),
+        (None, None) => bail!("no tmdb id or name"),
+    };
 
     let now_playing = NowPlaying {
-        tvdb: tvdb_id.parse()?,
+        series,
         episode: episode_num,
         season: season_num,
     };
