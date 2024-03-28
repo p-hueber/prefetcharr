@@ -7,7 +7,10 @@ use tokio::sync::mpsc;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use crate::{media_server::plex, once::Seen};
+use crate::{
+    media_server::{plex, MediaServer as _},
+    once::Seen,
+};
 
 mod media_server;
 mod once;
@@ -80,34 +83,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match args.media_server_type {
         MediaServer::Jellyfin => {
             info!("Start watching Jellyfin sessions");
-            let jelly_client = embyfin::Client::new(
+            let client = embyfin::Client::new(
                 args.media_server_url,
                 media_server_api_key,
                 embyfin::Fork::Jellyfin,
             );
-            tokio::spawn(embyfin::watch(
-                Duration::from_secs(args.interval),
-                jelly_client,
-                tx,
-            ));
+            tokio::spawn(client.watch(Duration::from_secs(args.interval), tx));
         }
         MediaServer::Emby => {
             info!("Start watching Emby sessions");
-            let emby_client = embyfin::Client::new(
+            let client = embyfin::Client::new(
                 args.media_server_url,
                 media_server_api_key,
                 embyfin::Fork::Emby,
             );
-            tokio::spawn(embyfin::watch(
-                Duration::from_secs(args.interval),
-                emby_client,
-                tx,
-            ));
+            tokio::spawn(client.watch(Duration::from_secs(args.interval), tx));
         }
         MediaServer::Plex => {
             info!("Start watching Plex sessions");
             let client = plex::Client::new(&args.media_server_url, &media_server_api_key)?;
-            tokio::spawn(async move { client.watch(Duration::from_secs(args.interval), tx).await });
+            tokio::spawn(client.watch(Duration::from_secs(args.interval), tx));
         }
     }
 

@@ -1,13 +1,9 @@
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 
 use anyhow::{anyhow, bail, Result};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tokio::sync::mpsc;
-use tracing::debug;
 
-use crate::Message;
-
-use super::{NowPlaying, Series};
+use super::{MediaServer, NowPlaying, Series};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -23,7 +19,7 @@ struct BaseItemDto {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct SessionInfo {
+pub struct SessionInfo {
     user_id: Option<String>,
     now_playing_item: Option<BaseItemDto>,
     #[serde(flatten)]
@@ -64,10 +60,6 @@ impl Client {
         ))
         .await?;
         Ok(response.json::<T>().await?)
-    }
-
-    async fn sessions(&self) -> Result<Vec<SessionInfo>> {
-        self.get("Sessions").await
     }
 
     async fn item(&self, user_id: &str, item_id: &str) -> Result<BaseItemDto> {
@@ -118,50 +110,44 @@ impl Ids {
     }
 }
 
-pub async fn watch(interval: Duration, client: Client, tx: mpsc::Sender<Message>) {
-    loop {
-        if let Ok(sessions) = client.sessions().await {
-            for p in sessions {
-                match Box::pin(extract(p, &client)).await {
-                    Ok(now_playing) => {
-                        tx.send(Message::NowPlaying(now_playing))
-                            .await
-                            .expect("sending to event loop");
-                    }
-                    Err(e) => debug!("Ignoring session: {e}"),
-                }
-            }
-        }
-        tokio::time::sleep(interval).await;
+impl MediaServer for Client {
+    type Session = SessionInfo;
+    type Error = anyhow::Error;
+
+    async fn sessions(&self) -> std::prelude::v1::Result<Vec<Self::Session>, Self::Error> {
+        self.get("Sessions").await
     }
-}
 
-async fn extract(p: SessionInfo, client: &Client) -> Result<NowPlaying> {
-    let episode_num = p
-        .now_playing_item
-        .as_ref()
-        .and_then(|np| np.index_number)
-        .ok_or_else(|| anyhow!("no episode"))?;
-    let ids = Ids::try_from(p)?;
+    async fn extract(
+        &self,
+        session: Self::Session,
+    ) -> std::prelude::v1::Result<NowPlaying, Self::Error> {
+        let episode_num = session
+            .now_playing_item
+            .as_ref()
+            .and_then(|np| np.index_number)
+            .ok_or_else(|| anyhow!("no episode"))?;
+        let ids = Ids::try_from(session)?;
 
-    let series = client.item(&ids.user, &ids.series).await?;
+        let series = self.item(&ids.user, &ids.series).await?;
 
-    let season = client.item(&ids.user, &ids.season).await?;
-    let season_num = season.index_number.ok_or_else(|| anyhow!("no season"))?;
+        let season = self.item(&ids.user, &ids.season).await?;
+        let season_num = season.index_number.ok_or_else(|| anyhow!("no season"))?;
 
-    let tvdb_id = series.provider_ids.get("Tvdb");
+        let tvdb_id = series.provider_ids.get("Tvdb");
 
-    let series = match (tvdb_id, series.name) {
-        (Some(tvdb), _) => Series::Tvdb(tvdb.parse()?),
-        (None, Some(title)) => Series::Title(title),
-        (None, None) => bail!("no tmdb id or name"),
-    };
+        let series = match (tvdb_id, series.name) {
+            (Some(tvdb), _) => Series::Tvdb(tvdb.parse()?),
+            (None, Some(title)) => Series::Title(title),
+            (None, None) => bail!("no tmdb id or name"),
+        };
 
-    let now_playing = NowPlaying {
-        series,
-        episode: episode_num,
-        season: season_num,
-    };
+        let now_playing = NowPlaying {
+            series,
+            episode: episode_num,
+            season: season_num,
+        };
 
-    Ok(now_playing)
+        Ok(now_playing)
+    }
 }
