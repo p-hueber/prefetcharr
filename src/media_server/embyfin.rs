@@ -1,27 +1,43 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::Result;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_json::Value;
 
-use super::{MediaServer, NowPlaying, Series};
+use super::{MediaServer, NowPlaying};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct BaseItemDto {
-    name: Option<String>,
-    series_id: Option<String>,
-    season_id: Option<String>,
-    index_number: Option<i32>,
+struct Episode {
+    series_id: String,
+    season_id: String,
+    index_number: i32,
+    #[serde(flatten)]
+    _other: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct Season {
+    index_number: i32,
+    #[serde(flatten)]
+    _other: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct Series {
+    name: String,
     provider_ids: HashMap<String, String>,
     #[serde(flatten)]
-    other: serde_json::Value,
+    _other: serde_json::Value,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct SessionInfo {
-    user_id: Option<String>,
-    now_playing_item: Option<BaseItemDto>,
+    user_id: String,
+    now_playing_item: Episode,
     #[serde(flatten)]
     other: serde_json::Value,
 }
@@ -62,7 +78,7 @@ impl Client {
         Ok(response.json::<T>().await?)
     }
 
-    async fn item(&self, user_id: &str, item_id: &str) -> Result<BaseItemDto> {
+    async fn item<T: DeserializeOwned>(&self, user_id: &str, item_id: &str) -> Result<T> {
         let path = format!("Users/{user_id}/Items/{item_id}");
         self.get(path.as_str()).await
     }
@@ -75,38 +91,24 @@ struct Ids {
     season: String,
 }
 
-impl TryFrom<SessionInfo> for Ids {
-    type Error = anyhow::Error;
-
-    fn try_from(session: SessionInfo) -> std::result::Result<Self, Self::Error> {
+impl From<SessionInfo> for Ids {
+    fn from(session: SessionInfo) -> Self {
         Ids::new(&session)
     }
 }
 
 impl Ids {
-    fn new(session: &SessionInfo) -> Result<Self> {
-        let user_id = session
-            .user_id
-            .clone()
-            .ok_or_else(|| anyhow!("missing user_id"))?;
-        let np = session
-            .now_playing_item
-            .as_ref()
-            .ok_or_else(|| anyhow!("missing now_playing_item"))?;
-        let series_id = np
-            .series_id
-            .clone()
-            .ok_or_else(|| anyhow!("missing series_id"))?;
-        let season_id = np
-            .season_id
-            .clone()
-            .ok_or_else(|| anyhow!("missing season_id"))?;
+    fn new(session: &SessionInfo) -> Self {
+        let user_id = session.user_id.clone();
+        let np = &session.now_playing_item;
+        let series_id = np.series_id.clone();
+        let season_id = np.season_id.clone();
 
-        Ok(Self {
+        Self {
             user: user_id,
             series: series_id,
             season: season_id,
-        })
+        }
     }
 }
 
@@ -115,31 +117,33 @@ impl MediaServer for Client {
     type Error = anyhow::Error;
 
     async fn sessions(&self) -> std::prelude::v1::Result<Vec<Self::Session>, Self::Error> {
-        self.get("Sessions").await
+        Ok(self
+            .get::<Vec<Value>>("Sessions")
+            .await?
+            .iter()
+            .cloned()
+            .map(serde_json::from_value)
+            .filter_map(Result::ok)
+            .collect::<Vec<Self::Session>>())
     }
 
     async fn extract(
         &self,
         session: Self::Session,
     ) -> std::prelude::v1::Result<NowPlaying, Self::Error> {
-        let episode_num = session
-            .now_playing_item
-            .as_ref()
-            .and_then(|np| np.index_number)
-            .ok_or_else(|| anyhow!("no episode"))?;
-        let ids = Ids::try_from(session)?;
+        let episode_num = session.now_playing_item.index_number;
+        let ids = Ids::from(session);
 
-        let series = self.item(&ids.user, &ids.series).await?;
+        let series: Series = self.item(&ids.user, &ids.series).await?;
 
-        let season = self.item(&ids.user, &ids.season).await?;
-        let season_num = season.index_number.ok_or_else(|| anyhow!("no season"))?;
+        let season: Season = self.item(&ids.user, &ids.season).await?;
+        let season_num = season.index_number;
 
         let tvdb_id = series.provider_ids.get("Tvdb");
 
-        let series = match (tvdb_id, series.name) {
-            (Some(tvdb), _) => Series::Tvdb(tvdb.parse()?),
-            (None, Some(title)) => Series::Title(title),
-            (None, None) => bail!("no tmdb id or name"),
+        let series = match tvdb_id {
+            Some(tvdb) => super::Series::Tvdb(tvdb.parse()?),
+            None => super::Series::Title(series.name),
         };
 
         let now_playing = NowPlaying {
