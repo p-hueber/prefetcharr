@@ -1,6 +1,6 @@
 #![warn(clippy::pedantic)]
 
-use std::{path::PathBuf, time::Duration};
+use std::{future::Future, path::PathBuf, pin::Pin, time::Duration};
 
 use clap::{arg, command, Parser, ValueEnum};
 use tokio::sync::mpsc;
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .or(args.jellyfin_api_key)
         .expect("using value enforced via clap");
 
-    match args.media_server_type {
+    let watcher: Pin<Box<dyn Future<Output = ()> + Send>> = match args.media_server_type {
         MediaServer::Jellyfin => {
             info!("Start watching Jellyfin sessions");
             let client = embyfin::Client::new(
@@ -88,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 media_server_api_key,
                 embyfin::Fork::Jellyfin,
             );
-            tokio::spawn(client.watch(Duration::from_secs(args.interval), tx));
+            Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Emby => {
             info!("Start watching Emby sessions");
@@ -97,20 +97,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 media_server_api_key,
                 embyfin::Fork::Emby,
             );
-            tokio::spawn(client.watch(Duration::from_secs(args.interval), tx));
+            Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Plex => {
             info!("Start watching Plex sessions");
             let client = plex::Client::new(&args.media_server_url, &media_server_api_key)?;
-            tokio::spawn(client.watch(Duration::from_secs(args.interval), tx));
+            Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
-    }
+    };
 
     let sonarr_client = sonarr::Client::new(args.sonarr_url, args.sonarr_api_key);
     let seen = Seen::default();
     let mut actor = process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes);
 
-    actor.process().await;
+    tokio::join!(watcher, actor.process());
 
     Ok(())
 }
