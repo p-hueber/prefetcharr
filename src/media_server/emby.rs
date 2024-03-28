@@ -1,17 +1,18 @@
 use std::{collections::HashMap, time::Duration};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tracing::debug;
 
 use crate::Message;
 
-use super::NowPlaying;
+use super::{NowPlaying, Series};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 struct BaseItemDto {
+    name: Option<String>,
     series_id: Option<String>,
     season_id: Option<String>,
     index_number: Option<i32>,
@@ -134,13 +135,16 @@ async fn extract(p: SessionInfo, client: &Client) -> Result<NowPlaying> {
     let season = client.item(&ids.user, &ids.season).await?;
     let season_num = season.index_number.ok_or_else(|| anyhow!("no season"))?;
 
-    let tvdb_id = series
-        .provider_ids
-        .get("Tvdb")
-        .ok_or_else(|| anyhow!("no tmdb id"))?;
+    let tvdb_id = series.provider_ids.get("Tvdb");
+
+    let series = match (tvdb_id, series.name) {
+        (Some(tvdb), _) => Series::Tvdb(tvdb.parse()?),
+        (None, Some(title)) => Series::Title(title),
+        (None, None) => bail!("no tmdb id or name"),
+    };
 
     let now_playing = NowPlaying {
-        tvdb: tvdb_id.parse()?,
+        series,
         episode: episode_num,
         season: season_num,
     };

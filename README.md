@@ -1,7 +1,7 @@
 # prefetcharr #
 
 Let [Sonarr](https://sonarr.tv) fetch the next season of a show you are watching
-on [Jellyfin](https://jellyfin.org) or [Emby](https://emby.media).
+on [Jellyfin](https://jellyfin.org)/[Emby](https://emby.media)/[Plex](https://www.plex.tv).
 
 ## Details ##
 
@@ -25,11 +25,11 @@ services:
     build: https://github.com/p-hueber/prefetcharr.git#latest
     image: prefetcharr
     environment:
-      # `jellyfin` or `emby`
+      # `jellyfin`, `emby` or `plex`
       - MEDIA_SERVER_TYPE=jellyfin
-      # Jellyfin/Emby baseurl
+      # Jellyfin/Emby/Plex baseurl
       - MEDIA_SERVER_URL=http://example.com/jellyfin
-      # Jellyfin/Emby API key
+      # Jellyfin/Emby API key or plex server token
       - MEDIA_SERVER_API_KEY=<YOUR KEY HERE>
       # Sonarr baseurl
       - SONARR_URL=http://example.com/sonarr
