@@ -1,5 +1,4 @@
-pub mod emby;
-pub mod jellyfin;
+pub mod embyfin;
 pub mod plex;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

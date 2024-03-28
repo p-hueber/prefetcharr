@@ -14,7 +14,7 @@ mod once;
 mod process;
 mod sonarr;
 
-use media_server::{emby, jellyfin};
+use media_server::embyfin;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -80,8 +80,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match args.media_server_type {
         MediaServer::Jellyfin => {
             info!("Start watching Jellyfin sessions");
-            let jelly_client = jellyfin::Client::new(args.media_server_url, media_server_api_key);
-            tokio::spawn(jellyfin::watch(
+            let jelly_client = embyfin::Client::new(
+                args.media_server_url,
+                media_server_api_key,
+                embyfin::Fork::Jellyfin,
+            );
+            tokio::spawn(embyfin::watch(
                 Duration::from_secs(args.interval),
                 jelly_client,
                 tx,
@@ -89,8 +93,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         MediaServer::Emby => {
             info!("Start watching Emby sessions");
-            let emby_client = emby::Client::new(args.media_server_url, media_server_api_key);
-            tokio::spawn(emby::watch(
+            let emby_client = embyfin::Client::new(
+                args.media_server_url,
+                media_server_api_key,
+                embyfin::Fork::Emby,
+            );
+            tokio::spawn(embyfin::watch(
                 Duration::from_secs(args.interval),
                 emby_client,
                 tx,
