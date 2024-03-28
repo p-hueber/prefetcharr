@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Add Plex support.
+
 ### Changed
 
 - Search series by name if tvdb id is not available.
+
 
 ## [0.4.0] - 2024-03-15
 

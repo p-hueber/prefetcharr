@@ -1,5 +1,6 @@
 pub mod emby;
 pub mod jellyfin;
+pub mod plex;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Series {

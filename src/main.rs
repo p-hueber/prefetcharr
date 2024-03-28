@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use crate::once::Seen;
+use crate::{media_server::plex, once::Seen};
 
 mod media_server;
 mod once;
@@ -22,10 +22,10 @@ struct Args {
     /// Media server type
     #[arg(long, default_value = "jellyfin")]
     media_server_type: MediaServer,
-    /// Jellyfin/Emby baseurl
+    /// Jellyfin/Emby/Plex baseurl
     #[arg(long, alias = "jellyfin-url", value_name = "URL")]
     media_server_url: String,
-    /// Jellyfin/Emby API key
+    /// Jellyfin/Emby API key or Plex server token
     #[arg(
         long,
         value_name = "API_KEY",
@@ -56,6 +56,7 @@ struct Args {
 enum MediaServer {
     Jellyfin,
     Emby,
+    Plex,
 }
 
 pub enum Message {
@@ -94,6 +95,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 emby_client,
                 tx,
             ));
+        }
+        MediaServer::Plex => {
+            info!("Start watching Plex sessions");
+            let client = plex::Client::new(&args.media_server_url, &media_server_api_key)?;
+            tokio::spawn(async move { client.watch(Duration::from_secs(args.interval), tx).await });
         }
     }
 
