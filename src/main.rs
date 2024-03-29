@@ -84,19 +84,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         MediaServer::Jellyfin => {
             info!("Start watching Jellyfin sessions");
             let client = embyfin::Client::new(
-                args.media_server_url,
+                &args.media_server_url,
                 media_server_api_key,
                 embyfin::Fork::Jellyfin,
-            );
+            )?;
             Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Emby => {
             info!("Start watching Emby sessions");
             let client = embyfin::Client::new(
-                args.media_server_url,
+                &args.media_server_url,
                 media_server_api_key,
                 embyfin::Fork::Emby,
-            );
+            )?;
             Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Plex => {
