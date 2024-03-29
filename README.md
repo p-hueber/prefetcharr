@@ -12,9 +12,9 @@ _Sonarr_ to monitor it and initiate a season search.
 
 ## Build and install ##
 
-[Install Rust](https://www.rust-lang.org/tools/install), clone this repo and run
+[Install Rust](https://www.rust-lang.org/tools/install) and run
 ```
-cargo install --locked --path .
+cargo install --git https://github.com/p-hueber/prefetcharr
 ```
 
 Or with docker compose:
