@@ -11,12 +11,10 @@ rust-version = "1.70.0"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env", "string"] }
-jellyfin_api = "10.8.13-1"
-reqwest = "0"
-serde = "1"
+reqwest = { version = "0", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread", "time", "sync"] }
 tracing = "0"
 tracing-appender = "0"
 tracing-subscriber = { version = "0", features = ["env-filter"] }
-uuid = "1"

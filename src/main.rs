@@ -1,20 +1,23 @@
 #![warn(clippy::pedantic)]
 
-use std::{path::PathBuf, time::Duration};
+use std::{future::Future, path::PathBuf, pin::Pin, time::Duration};
 
 use clap::{arg, command, Parser, ValueEnum};
 use tokio::sync::mpsc;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use crate::{media_server::plex, once::Seen};
+use crate::{
+    media_server::{plex, MediaServer as _},
+    once::Seen,
+};
 
 mod media_server;
 mod once;
 mod process;
 mod sonarr;
 
-use media_server::{emby, jellyfin};
+use media_server::embyfin;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -77,37 +80,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .or(args.jellyfin_api_key)
         .expect("using value enforced via clap");
 
-    match args.media_server_type {
+    let watcher: Pin<Box<dyn Future<Output = ()> + Send>> = match args.media_server_type {
         MediaServer::Jellyfin => {
             info!("Start watching Jellyfin sessions");
-            let jelly_client = jellyfin::Client::new(args.media_server_url, media_server_api_key);
-            tokio::spawn(jellyfin::watch(
-                Duration::from_secs(args.interval),
-                jelly_client,
-                tx,
-            ));
+            let client = embyfin::Client::new(
+                args.media_server_url,
+                media_server_api_key,
+                embyfin::Fork::Jellyfin,
+            );
+            Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Emby => {
             info!("Start watching Emby sessions");
-            let emby_client = emby::Client::new(args.media_server_url, media_server_api_key);
-            tokio::spawn(emby::watch(
-                Duration::from_secs(args.interval),
-                emby_client,
-                tx,
-            ));
+            let client = embyfin::Client::new(
+                args.media_server_url,
+                media_server_api_key,
+                embyfin::Fork::Emby,
+            );
+            Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Plex => {
             info!("Start watching Plex sessions");
             let client = plex::Client::new(&args.media_server_url, &media_server_api_key)?;
-            tokio::spawn(async move { client.watch(Duration::from_secs(args.interval), tx).await });
+            Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
-    }
+    };
 
     let sonarr_client = sonarr::Client::new(args.sonarr_url, args.sonarr_api_key);
     let seen = Seen::default();
     let mut actor = process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes);
 
-    actor.process().await;
+    tokio::join!(watcher, actor.process());
 
     Ok(())
 }

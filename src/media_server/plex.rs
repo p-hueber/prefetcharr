@@ -1,19 +1,13 @@
-use std::time::Duration;
-
 use anyhow::{anyhow, bail, Result};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::Value;
-use tokio::sync::mpsc;
-use tracing::{error, trace};
 
-use crate::Message;
-
-use super::NowPlaying;
+use super::{MediaServer, NowPlaying};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Episode {
+pub struct Episode {
     grandparent_title: String,
     grandparent_key: String,
     index: i32,
@@ -47,23 +41,6 @@ impl Client {
         Ok(Self { client, url })
     }
 
-    async fn sessions(&self) -> Result<Vec<Episode>> {
-        let obj: serde_json::Map<String, Value> = self.get("status/sessions").await?;
-        Ok(obj
-            .get("MediaContainer")
-            .and_then(|v| v.get("Metadata"))
-            .and_then(Value::as_array)
-            .map(|metas| {
-                metas
-                    .iter()
-                    .cloned()
-                    .map(serde_json::value::from_value)
-                    .filter_map(Result::ok)
-                    .collect::<Vec<Episode>>()
-            })
-            .unwrap_or_default())
-    }
-
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let mut url = self.url.clone();
         url.path_segments_mut()
@@ -90,39 +67,47 @@ impl Client {
                 (provider == "tvdb").then_some(id.parse().ok()?)
             })
     }
+}
 
-    async fn extract(&self, m: Episode) -> Result<NowPlaying> {
-        if m.r#type != "episode" {
+impl MediaServer for Client {
+    type Session = Episode;
+
+    type Error = anyhow::Error;
+
+    async fn sessions(&self) -> std::prelude::v1::Result<Vec<Self::Session>, Self::Error> {
+        let obj: serde_json::Map<String, Value> = self.get("status/sessions").await?;
+        Ok(obj
+            .get("MediaContainer")
+            .and_then(|v| v.get("Metadata"))
+            .and_then(Value::as_array)
+            .map(|metas| {
+                metas
+                    .iter()
+                    .cloned()
+                    .map(serde_json::value::from_value)
+                    .filter_map(Result::ok)
+                    .collect::<Vec<Episode>>()
+            })
+            .unwrap_or_default())
+    }
+
+    async fn extract(
+        &self,
+        session: Self::Session,
+    ) -> std::prelude::v1::Result<NowPlaying, Self::Error> {
+        if session.r#type != "episode" {
             bail!("not an episode");
         }
-        let episode = m.index;
-        let season = m.parent_index;
-        let series = match self.tvdb(&m.grandparent_key).await {
+        let episode = session.index;
+        let season = session.parent_index;
+        let series = match self.tvdb(&session.grandparent_key).await {
             Some(id) => super::Series::Tvdb(id),
-            None => super::Series::Title(m.grandparent_title),
+            None => super::Series::Title(session.grandparent_title),
         };
         Ok(NowPlaying {
             series,
             episode,
             season,
         })
-    }
-
-    pub async fn watch(&self, interval: Duration, tx: mpsc::Sender<Message>) {
-        loop {
-            match self.sessions().await {
-                Ok(sessions) => {
-                    for s in sessions {
-                        trace!(?s, "processing session");
-                        let Ok(np) = self.extract(s).await else {
-                            continue;
-                        };
-                        tx.send(Message::NowPlaying(np)).await.ok();
-                    }
-                }
-                Err(err) => error!("cannot fetch sessions from plex: {err}"),
-            }
-            tokio::time::sleep(interval).await;
-        }
     }
 }
