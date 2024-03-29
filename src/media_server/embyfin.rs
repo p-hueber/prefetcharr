@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use reqwest::Url;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
@@ -48,21 +49,19 @@ pub enum Fork {
 }
 
 pub struct Client {
-    base_url: String,
+    base_url: Url,
     api_key: String,
     fork: Fork,
 }
 
 impl Client {
-    pub fn new(mut base_url: String, api_key: String, fork: Fork) -> Self {
-        if !base_url.ends_with('/') {
-            base_url += "/";
-        }
-        Self {
+    pub fn new(base_url: &str, api_key: String, fork: Fork) -> Result<Self> {
+        let base_url = base_url.parse()?;
+        Ok(Self {
             base_url,
             api_key,
             fork,
-        }
+        })
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
@@ -70,11 +69,14 @@ impl Client {
             Fork::Jellyfin => "apikey",
             Fork::Emby => "api_key",
         };
-        let response = reqwest::get(format!(
-            "{}{}?{}={}",
-            self.base_url, path, api_key_key, self.api_key
-        ))
-        .await?;
+        let mut url = self.base_url.clone();
+        url.path_segments_mut()
+            .map_err(|()| anyhow!("url is relative"))?
+            .extend(path.split('/'));
+        url.query_pairs_mut()
+            .append_pair(api_key_key, &self.api_key)
+            .finish();
+        let response = reqwest::get(url).await?;
         Ok(response.json::<T>().await?)
     }
 
