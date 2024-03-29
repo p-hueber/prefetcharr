@@ -2,7 +2,11 @@ use anyhow::anyhow;
 use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
-use crate::{media_server::NowPlaying, once::Seen, sonarr, Message};
+use crate::{
+    media_server::{NowPlaying, Series},
+    once::Seen,
+    sonarr, Message,
+};
 
 pub struct Actor {
     rx: mpsc::Receiver<Message>,
@@ -44,7 +48,10 @@ impl Actor {
         let series = self.sonarr_client.series().await?;
         let mut series = series
             .into_iter()
-            .find(|s| s.tvdb_id == np.tvdb)
+            .find(|s| match &np.series {
+                Series::Title(t) => s.title.as_ref() == Some(t),
+                Series::Tvdb(i) => &s.tvdb_id == i,
+            })
             .ok_or_else(|| anyhow!("series not found in Sonarr"))?;
 
         info!(title = series.title.clone().unwrap_or_else(|| "?".to_string()), now_playing = ?np);
@@ -70,7 +77,7 @@ impl Actor {
             return Ok(());
         };
 
-        if !self.seen.once(&np) {
+        if !self.seen.once(np.clone()) {
             debug!(now_playing = ?np, "skip previously processed item");
             return Ok(());
         }
