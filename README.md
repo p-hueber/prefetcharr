@@ -47,3 +47,5 @@ services:
       - /path/to/log/dir:/log
 
 ```
+Note that you need to build the image instead of pulling it, e.g. by running
+`docker compose build prefetcharr`.
