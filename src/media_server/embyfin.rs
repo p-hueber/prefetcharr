@@ -157,3 +157,268 @@ impl MediaServer for Client {
         Ok(now_playing)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::time::{Duration, Instant};
+
+    use tokio::sync::mpsc;
+
+    use crate::{
+        media_server::{embyfin, MediaServer, NowPlaying, Series},
+        Message,
+    };
+
+    fn episode() -> serde_json::Value {
+        serde_json::json!(
+            [{
+                "UserId": "user",
+                "NowPlayingItem": {
+                    "SeriesId": "a",
+                    "SeasonId": "b",
+                    "IndexNumber": 5
+                }
+            }]
+        )
+    }
+    fn series() -> serde_json::Value {
+        serde_json::json!({
+            "Name": "Test Show",
+            "ProviderIds": { "Tvdb": "1234" }
+        })
+    }
+
+    #[tokio::test]
+    async fn single_session() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let sessions_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Sessions")
+                    .query_param("apikey", "secret");
+                then.json_body(episode());
+            })
+            .await;
+
+        let season_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/b")
+                    .query_param("apikey", "secret");
+                then.json_body(serde_json::json!({"IndexNumber": 3}));
+            })
+            .await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/a")
+                    .query_param("apikey", "secret");
+                then.json_body(series());
+            })
+            .await;
+
+        let client = embyfin::Client::new(
+            &server.url("/pathprefix"),
+            "secret".to_string(),
+            embyfin::Fork::Jellyfin,
+        )?;
+
+        let (tx, mut rx) = mpsc::channel(1);
+        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
+        let message = rx.recv().await;
+        let message_expect = Message::NowPlaying(NowPlaying {
+            series: Series::Tvdb(1234),
+            episode: 5,
+            season: 3,
+        });
+
+        assert_eq!(message, Some(message_expect));
+
+        sessions_mock.assert_async().await;
+        series_mock.assert_async().await;
+        season_mock.assert_async().await;
+
+        watcher.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn skip_invalid_sessions() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let sessions_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Sessions")
+                    .query_param("apikey", "secret");
+                then.json_body(serde_json::json!(
+                    [{ "invalid": "session" },
+                     {
+                        "UserId": "user",
+                        "NowPlayingItem": {
+                            "SeriesId": "invalid",
+                            "SeasonId": "invalid",
+                            "IndexNumber": 5
+                        }
+                     },
+                     {
+                        "UserId": "user",
+                        "NowPlayingItem": {
+                            "SeriesId": "a",
+                            "SeasonId": "b",
+                            "IndexNumber": 5
+                        }
+                    }]
+                ));
+            })
+            .await;
+
+        let season_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/b")
+                    .query_param("apikey", "secret");
+                then.json_body(serde_json::json!({"IndexNumber": 3}));
+            })
+            .await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/a")
+                    .query_param("apikey", "secret");
+                then.json_body(series());
+            })
+            .await;
+
+        let client = embyfin::Client::new(
+            &server.url("/pathprefix"),
+            "secret".to_string(),
+            embyfin::Fork::Jellyfin,
+        )?;
+
+        let (tx, mut rx) = mpsc::channel(1);
+        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
+        let message = rx.recv().await;
+        let message_expect = Message::NowPlaying(NowPlaying {
+            series: Series::Tvdb(1234),
+            episode: 5,
+            season: 3,
+        });
+
+        assert_eq!(message, Some(message_expect));
+
+        sessions_mock.assert_async().await;
+        series_mock.assert_async().await;
+        season_mock.assert_async().await;
+
+        watcher.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn name_fallback_emby() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let sessions_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Sessions")
+                    .query_param("api_key", "secret");
+                then.json_body(episode());
+            })
+            .await;
+
+        let season_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/b")
+                    .query_param("api_key", "secret");
+                then.json_body(serde_json::json!({"IndexNumber": 3}));
+            })
+            .await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/a")
+                    .query_param("api_key", "secret");
+                then.json_body(serde_json::json!({
+                    "Name": "Test Show",
+                    "ProviderIds": { }
+                }));
+            })
+            .await;
+
+        let client = embyfin::Client::new(
+            &server.url("/pathprefix"),
+            "secret".to_string(),
+            embyfin::Fork::Emby,
+        )?;
+
+        let (tx, mut rx) = mpsc::channel(1);
+        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
+        let message = rx.recv().await;
+        let message_expect = Message::NowPlaying(NowPlaying {
+            series: Series::Title("Test Show".to_string()),
+            episode: 5,
+            season: 3,
+        });
+
+        assert_eq!(message, Some(message_expect));
+
+        sessions_mock.assert_async().await;
+        series_mock.assert_async().await;
+        season_mock.assert_async().await;
+
+        watcher.abort();
+        Ok(())
+    }
+
+    #[test]
+    fn bad_url() {
+        assert!(
+            embyfin::Client::new("/notanurl", "secret".to_string(), embyfin::Fork::Jellyfin,)
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn interval() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let _sessions_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Sessions")
+                    .query_param("apikey", "secret");
+                then.json_body(episode());
+            })
+            .await;
+
+        let _season_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/b")
+                    .query_param("apikey", "secret");
+                then.json_body(serde_json::json!({"IndexNumber": 3}));
+            })
+            .await;
+
+        let _series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/a")
+                    .query_param("apikey", "secret");
+                then.json_body(series());
+            })
+            .await;
+
+        let client = embyfin::Client::new(
+            &server.url("/pathprefix"),
+            "secret".to_string(),
+            embyfin::Fork::Jellyfin,
+        )?;
+
+        let (tx, mut rx) = mpsc::channel(1);
+        let watcher = tokio::spawn(client.watch(Duration::from_millis(100), tx));
+
+        let _ = rx.recv().await;
+        let start = Instant::now();
+        let _ = rx.recv().await;
+        assert!(Instant::now().duration_since(start) >= Duration::from_millis(100));
+
+        watcher.abort();
+        Ok(())
+    }
+}

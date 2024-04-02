@@ -98,3 +98,208 @@ impl Actor {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::time::Duration;
+
+    use httpmock::Method::{POST, PUT};
+    use serde_json::json;
+    use tokio::sync::mpsc;
+
+    use crate::{
+        media_server::{NowPlaying, Series},
+        Message,
+    };
+
+    #[tokio::test]
+    async fn search_next() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series")
+                    .query_param("apikey", "secret");
+                then.json_body(serde_json::json!(
+                    [{
+                            "id": 1234,
+                            "title": "TestShow",
+                            "tvdbId": 5678,
+                            "monitored": false,
+                            "monitorNewItems": "all",
+                            "seasons": [{
+                                "seasonNumber": 1,
+                                "monitored": true,
+                                "statistics": {
+                                    "sizeOnDisk": 9000,
+                                    "episodeCount": 8,
+                                    "totalEpisodeCount": 8,
+                                }
+                            },{
+                                "seasonNumber": 2,
+                                "monitored": false,
+                                "statistics": {
+                                    "sizeOnDisk": 9000,
+                                    "episodeCount": 0,
+                                    "totalEpisodeCount": 8,
+                                }
+                            }]
+                        }
+                    ]
+                ));
+            })
+            .await;
+
+        let put_series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series/1234")
+                    .query_param("apikey", "secret")
+                    .method(PUT)
+                    .json_body(serde_json::json!(
+                        {
+                            "id": 1234,
+                            "title": "TestShow",
+                            "tvdbId": 5678,
+                            "monitored": true,
+                            "monitorNewItems": "all",
+                            "seasons": [{
+                                "seasonNumber": 1,
+                                "monitored": true,
+                                "statistics": {
+                                    "sizeOnDisk": 9000,
+                                    "episodeCount": 8,
+                                    "totalEpisodeCount": 8,
+                                }
+                            },{
+                                "seasonNumber": 2,
+                                "monitored": true,
+                                "statistics": {
+                                    "sizeOnDisk": 9000,
+                                    "episodeCount": 0,
+                                    "totalEpisodeCount": 8,
+                                }
+                            }]
+                        }
+                    ));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let command_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/command")
+                    .query_param("apikey", "secret")
+                    .method(POST)
+                    .json_body(json!({
+                        "name": "SeasonSearch",
+                        "seriesId": 1234,
+                        "seasonNumber": 2,
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let (tx, rx) = mpsc::channel(1);
+        let sonarr = crate::sonarr::Client::new(server.url("/pathprefix"), "secret".to_string());
+        tokio::spawn(async move {
+            super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2)
+                .process()
+                .await;
+        });
+
+        tx.send(Message::NowPlaying(NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+        }))
+        .await?;
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        series_mock.assert_async().await;
+        put_series_mock.assert_async().await;
+        command_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn monitor() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series")
+                    .query_param("apikey", "secret");
+                then.json_body(serde_json::json!(
+                    [{
+                            "id": 1234,
+                            "title": "TestShow",
+                            "tvdbId": 5678,
+                            "monitored": false,
+                            "monitorNewItems": "all",
+                            "seasons": [{
+                                "seasonNumber": 1,
+                                "monitored": true,
+                                "statistics": {
+                                    "sizeOnDisk": 9000,
+                                    "episodeCount": 8,
+                                    "totalEpisodeCount": 8,
+                                }
+                            }]
+                        }
+                    ]
+                ));
+            })
+            .await;
+
+        let put_series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series/1234")
+                    .query_param("apikey", "secret")
+                    .method(PUT)
+                    .json_body(serde_json::json!(
+                        {
+                            "id": 1234,
+                            "title": "TestShow",
+                            "tvdbId": 5678,
+                            "monitored": true,
+                            "monitorNewItems": "all",
+                            "seasons": [{
+                                "seasonNumber": 1,
+                                "monitored": true,
+                                "statistics": {
+                                    "sizeOnDisk": 9000,
+                                    "episodeCount": 8,
+                                    "totalEpisodeCount": 8,
+                                }
+                            }]
+                        }
+                    ));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let (tx, rx) = mpsc::channel(1);
+        let sonarr = crate::sonarr::Client::new(server.url("/pathprefix"), "secret".to_string());
+        tokio::spawn(async move {
+            super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2)
+                .process()
+                .await;
+        });
+
+        tx.send(Message::NowPlaying(NowPlaying {
+            series: Series::Tvdb(5678),
+            episode: 7,
+            season: 1,
+        }))
+        .await?;
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        series_mock.assert_async().await;
+        put_series_mock.assert_async().await;
+
+        Ok(())
+    }
+}

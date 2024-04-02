@@ -62,6 +62,7 @@ enum MediaServer {
     Plex,
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum Message {
     NowPlaying(media_server::NowPlaying),
 }
