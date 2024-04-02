@@ -19,6 +19,9 @@ mod sonarr;
 
 use media_server::embyfin;
 
+const NAME: &str = env!("CARGO_PKG_NAME");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -72,6 +75,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     enable_logging(&args.log_dir);
+
+    info!("{NAME} {VERSION}");
 
     let (tx, rx) = mpsc::channel(1);
 
