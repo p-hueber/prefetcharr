@@ -132,3 +132,217 @@ impl SeriesResource {
         self.seasons.iter_mut().find(|s| s.season_number == num)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use httpmock::Method::{POST, PUT};
+    use serde_json::{json, Value};
+
+    use crate::sonarr::{
+        NewItemMonitorTypes, SeasonResource, SeasonStatisticsResource, SeriesResource,
+    };
+
+    #[tokio::test]
+    async fn series_v3() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series")
+                    .query_param("apikey", "secret");
+                then.json_body(serde_json::json!(
+                    [{
+                        "id": 1234,
+                        "title": "TestShow",
+                        "tvdbId": 5678,
+                        "monitored": false,
+                        "seasons": []
+                    }]
+                ));
+            })
+            .await;
+        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+
+        let series = client.series().await?;
+        assert_eq!(series[0].id, 1234);
+
+        series_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn series_multiple() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series")
+                    .query_param("apikey", "secret");
+                then.json_body(serde_json::json!(
+                    [{
+                        "id": 1234,
+                        "title": "TestShow",
+                        "tvdbId": 5678,
+                        "monitored": false,
+                        "monitorNewItems": "all",
+                        "seasons": []
+                    },{
+                        "id": 1234,
+                        "title": "TestShow",
+                        "tvdbId": 5678,
+                        "monitored": false,
+                        "monitorNewItems": "all",
+                        "seasons": []
+                    }]
+                ));
+            })
+            .await;
+        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+
+        let series = client.series().await?;
+        assert_eq!(series.len(), 2);
+
+        series_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn series_emtpy() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series")
+                    .query_param("apikey", "secret");
+                then.json_body(serde_json::json!([]));
+            })
+            .await;
+        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+
+        let series = client.series().await?;
+        assert_eq!(series.len(), 0);
+
+        series_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn put_series() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series = SeriesResource {
+            id: 1234,
+            title: Some("TestShow".to_string()),
+            tvdb_id: 5678,
+            monitored: false,
+            monitor_new_items: Some(NewItemMonitorTypes::All),
+            seasons: vec![],
+            other: Value::Null,
+        };
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series/1234")
+                    .query_param("apikey", "secret")
+                    .method(PUT)
+                    .json_body(serde_json::json!(
+                        {
+                            "id": 1234,
+                            "title": "TestShow",
+                            "tvdbId": 5678,
+                            "monitored": false,
+                            "monitorNewItems": "all",
+                            "seasons": []
+                        }
+                    ));
+                then.json_body(json!({}));
+            })
+            .await;
+        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+
+        client.put_series(&series).await?;
+
+        series_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn search_season() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let season = SeasonResource {
+            season_number: 1,
+            monitored: false,
+            statistics: SeasonStatisticsResource {
+                size_on_disk: 9000,
+                episode_count: 8,
+                total_episode_count: 0,
+                other: Value::Null,
+            },
+            other: Value::Null,
+        };
+
+        let series = SeriesResource {
+            id: 1234,
+            title: Some("TestShow".to_string()),
+            tvdb_id: 5678,
+            monitored: false,
+            monitor_new_items: Some(NewItemMonitorTypes::All),
+            seasons: vec![season],
+            other: serde_json::json!({}),
+        };
+
+        let command_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/command")
+                    .query_param("apikey", "secret")
+                    .method(POST)
+                    .json_body(json!({
+                        "name": "SeasonSearch",
+                        "seriesId": 1234,
+                        "seasonNumber": 1,
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series/1234")
+                    .query_param("apikey", "secret")
+                    .method(PUT)
+                    .json_body(serde_json::json!(
+                        {
+                            "id": 1234,
+                            "title": "TestShow",
+                            "tvdbId": 5678,
+                            "monitored": true,
+                            "monitorNewItems": "all",
+                            "seasons": [{
+                                "seasonNumber": 1,
+                                "monitored": true,
+                                "statistics": {
+                                    "sizeOnDisk": 9000,
+                                    "episodeCount": 8,
+                                    "totalEpisodeCount": 0,
+                                }
+                            }]
+                        }
+                    ));
+                then.json_body(json!({}));
+            })
+            .await;
+        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+
+        client.search_season(&series, 1).await?;
+
+        series_mock.assert_async().await;
+        command_mock.assert_async().await;
+
+        Ok(())
+    }
+}

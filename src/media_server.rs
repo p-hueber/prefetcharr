@@ -14,7 +14,7 @@ pub enum Series {
     Tvdb(i32),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NowPlaying {
     pub series: Series,
     pub episode: i32,
