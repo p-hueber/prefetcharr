@@ -106,14 +106,14 @@ pub struct SeasonStatisticsResource {
 pub struct SeasonResource {
     pub season_number: i32,
     pub monitored: bool,
-    pub statistics: SeasonStatisticsResource,
+    pub statistics: Option<SeasonStatisticsResource>,
     #[serde(flatten)]
     other: serde_json::Value,
 }
 
 impl SeasonResource {
-    pub fn last_episode(&self) -> i32 {
-        self.statistics.total_episode_count
+    pub fn last_episode(&self) -> Option<i32> {
+        self.statistics.as_ref().map(|s| s.total_episode_count)
     }
 }
 
@@ -224,7 +224,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn series_skip_missing_statistics() -> Result<(), Box<dyn std::error::Error>> {
+    async fn series_parse_missing_statistics() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
 
         let series_mock = server
@@ -239,9 +239,34 @@ mod test {
                         "monitored": false,
                         "monitorNewItems": "all",
                         "seasons": [{
-                            "seasonNumber": 1,
+                            "seasonNumber": 0,
                             "monitored": false
                         }]
+                    }]
+                ));
+            })
+            .await;
+        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+
+        let series = client.series().await?;
+        assert_eq!(series.len(), 1);
+
+        series_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn series_skip_malformed_series() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series")
+                    .query_param("apikey", "secret");
+                then.json_body(serde_json::json!(
+                    [{
+                        "invalid": "TestShow",
                     },{
                         "id": 1234,
                         "title": "TestShow",
@@ -337,7 +362,8 @@ mod test {
                 episode_count: 8,
                 total_episode_count: 0,
                 other: Value::Null,
-            },
+            }
+            .into(),
             other: Value::Null,
         };
 

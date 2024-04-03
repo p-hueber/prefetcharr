@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Skip over malformed series from Sonarr but search the rest.
+- Treat the `statistics` field of a season in Sonarr as optional.
 
 
 ## [0.5.0] - 2024-04-02
