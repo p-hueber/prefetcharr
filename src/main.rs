@@ -4,7 +4,7 @@ use std::{future::Future, path::PathBuf, pin::Pin, time::Duration};
 
 use clap::{arg, command, Parser, ValueEnum};
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, level_filters::LevelFilter};
 use tracing_subscriber::EnvFilter;
 
 use crate::{
@@ -122,17 +122,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn enable_logging(log_dir: &Option<PathBuf>) {
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
+    let builder = tracing_subscriber::fmt().with_env_filter(env_filter);
     if let Some(log_dir) = log_dir {
         let file_appender = tracing_appender::rolling::daily(log_dir, "prefetcharr.log");
-        tracing_subscriber::fmt()
-            .with_env_filter(EnvFilter::from_default_env())
-            .with_ansi(false)
-            .with_writer(file_appender)
-            .init();
+        builder.with_ansi(false).with_writer(file_appender).init();
     } else {
-        tracing_subscriber::fmt()
-            .with_env_filter(EnvFilter::from_default_env())
-            .with_writer(std::io::stderr)
-            .init();
+        builder.with_writer(std::io::stderr).init();
     }
 }
