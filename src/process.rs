@@ -63,6 +63,7 @@ impl Actor {
         if np.episode
             <= season
                 .last_episode()
+                .unwrap_or(0)
                 .saturating_sub(i32::from(self.remaining_episodes))
         {
             debug!(now_playing = ?np, season = ?season, "ignoring early episode");
@@ -84,9 +85,11 @@ impl Actor {
 
         let next_season_num = next_season.season_number;
 
-        if next_season.statistics.episode_count == next_season.statistics.total_episode_count {
-            debug!(num = next_season_num, "skip already downloaded season");
-            return Ok(());
+        if let Some(statistics) = &next_season.statistics {
+            if statistics.episode_count == statistics.total_episode_count {
+                debug!(num = next_season_num, "skip already downloaded season");
+                return Ok(());
+            }
         }
 
         info!(num = next_season_num, "Searching next season");

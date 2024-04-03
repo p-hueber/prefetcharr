@@ -5,11 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.5.1] - 2024-04-03
+
+### Changed
+
+- Set the default log level to `INFO`.
 
 ### Fixed
 
 - Skip over malformed series from Sonarr but search the rest.
+- Treat the `statistics` field of a season in Sonarr as optional.
 
 
 ## [0.5.0] - 2024-04-02
