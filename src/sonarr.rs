@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
+use tracing::debug;
 
 pub struct Client {
     base_url: String,
@@ -37,7 +38,21 @@ impl Client {
     }
 
     pub async fn series(&self) -> Result<Vec<SeriesResource>> {
-        self.get("series").await
+        let series = self
+            .get::<Value>("series")
+            .await?
+            .as_array()
+            .ok_or_else(|| anyhow!("not an array"))?
+            .iter()
+            .filter_map(|s| match serde_json::from_value(s.clone()) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    debug!(series=?s, "ignoring malformed series entry: {e}");
+                    None
+                }
+            })
+            .collect::<Vec<SeriesResource>>();
+        Ok(series)
     }
 
     pub async fn search_season(
@@ -202,6 +217,46 @@ mod test {
 
         let series = client.series().await?;
         assert_eq!(series.len(), 2);
+
+        series_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn series_skip_missing_statistics() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series")
+                    .query_param("apikey", "secret");
+                then.json_body(serde_json::json!(
+                    [{
+                        "id": 1234,
+                        "title": "TestShow",
+                        "tvdbId": 5678,
+                        "monitored": false,
+                        "monitorNewItems": "all",
+                        "seasons": [{
+                            "seasonNumber": 1,
+                            "monitored": false
+                        }]
+                    },{
+                        "id": 1234,
+                        "title": "TestShow",
+                        "tvdbId": 5678,
+                        "monitored": false,
+                        "monitorNewItems": "all",
+                        "seasons": []
+                    }]
+                ));
+            })
+            .await;
+        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+
+        let series = client.series().await?;
+        assert_eq!(series.len(), 1);
 
         series_mock.assert_async().await;
 
