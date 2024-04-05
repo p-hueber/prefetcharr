@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Docker images are published to Docker Hub as `phueber/prefetcharr:latest`.
+
 ### Changed
 
 - Always log to `stderr`, regardless of the `--log-dir` flag.
