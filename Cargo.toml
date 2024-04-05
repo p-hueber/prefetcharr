@@ -21,3 +21,8 @@ tracing-subscriber = { version = "0", features = ["env-filter"] }
 
 [dev-dependencies]
 httpmock = "0.7.0"
+
+[profile.release]
+strip = "debuginfo"
+lto = "fat"
+codegen-units = 1

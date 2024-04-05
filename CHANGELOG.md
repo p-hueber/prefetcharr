@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Always log to `stderr`, regardless of the `--log-dir` flag.
 - Only log with ANSI colors if `stderr` is a terminal.
 - Use rustls instead of openssl.
+- Reduce binary and docker image size.
 
 
 ## [0.5.1] - 2024-04-03
