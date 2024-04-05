@@ -134,6 +134,7 @@ fn enable_logging(log_dir: &Option<PathBuf>) {
 
     let subscriber = tracing_subscriber::fmt()
         .with_env_filter(env_filter)
+        .with_ansi(stderr().is_terminal())
         .with_writer(stderr)
         .finish();
 
