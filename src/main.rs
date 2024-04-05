@@ -1,11 +1,17 @@
 #![warn(clippy::pedantic)]
 
-use std::{future::Future, path::PathBuf, pin::Pin, time::Duration};
+use std::{
+    future::Future,
+    io::{stderr, IsTerminal},
+    path::PathBuf,
+    pin::Pin,
+    time::Duration,
+};
 
 use clap::{arg, command, Parser, ValueEnum};
 use tokio::sync::mpsc;
 use tracing::{info, level_filters::LevelFilter};
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::{
     media_server::{plex, MediaServer as _},
@@ -125,11 +131,21 @@ fn enable_logging(log_dir: &Option<PathBuf>) {
     let env_filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
-    let builder = tracing_subscriber::fmt().with_env_filter(env_filter);
-    if let Some(log_dir) = log_dir {
+
+    let subscriber = tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_writer(stderr)
+        .finish();
+
+    let rolling_layer = log_dir.as_ref().map(|log_dir| {
         let file_appender = tracing_appender::rolling::daily(log_dir, "prefetcharr.log");
-        builder.with_ansi(false).with_writer(file_appender).init();
-    } else {
-        builder.with_writer(std::io::stderr).init();
-    }
+        tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_writer(file_appender)
+    });
+
+    subscriber
+        .with(rolling_layer)
+        .try_init()
+        .expect("setting the default subscriber");
 }
