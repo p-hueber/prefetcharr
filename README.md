@@ -22,8 +22,8 @@ Or with docker compose:
 version: '3.5'
 services:
   prefetcharr:
-    build: https://github.com/p-hueber/prefetcharr.git#latest
-    image: prefetcharr
+    image: phueber/prefetcharr:latest
+    container_name: prefetcharr
     environment:
       # `jellyfin`, `emby` or `plex`
       - MEDIA_SERVER_TYPE=jellyfin
@@ -47,5 +47,3 @@ services:
       - /path/to/log/dir:/log
 
 ```
-Note that you need to build the image instead of pulling it, e.g. by running
-`docker compose build prefetcharr`.
