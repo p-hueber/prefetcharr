@@ -10,7 +10,7 @@ use std::{
 
 use clap::{arg, command, Parser, ValueEnum};
 use tokio::sync::mpsc;
-use tracing::{info, level_filters::LevelFilter};
+use tracing::{info, level_filters::LevelFilter, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::{
@@ -83,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     enable_logging(&args.log_dir);
 
     info!("{NAME} {VERSION}");
+    warn_deprecated(&args);
 
     let (tx, rx) = mpsc::channel(1);
 
@@ -149,4 +150,13 @@ fn enable_logging(log_dir: &Option<PathBuf>) {
         .with(rolling_layer)
         .try_init()
         .expect("setting the default subscriber");
+}
+
+fn warn_deprecated(args: &Args) {
+    if std::env::args().any(|arg| arg == "--jellyfin-url") {
+        warn!("`--jellyfin-url` is deprecated. Use `--media-server-url` instead.");
+    }
+    if args.jellyfin_api_key.is_some() {
+        warn!("`JELLYFIN_API_KEY` is deprecated. Use `MEDIA_SERVER_API_KEY` instead.");
+    }
 }
