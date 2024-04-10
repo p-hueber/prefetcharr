@@ -6,7 +6,8 @@ on [Jellyfin](https://jellyfin.org)/[Emby](https://emby.media)/[Plex](https://ww
 ## Details ##
 
 _prefetcharr_ periodically polls your media server for active playback sessions.
-For TV shows, it checks whether the episode played is near the end of a season.
+For TV shows, it checks whether the pilot is playing or if the end of a season
+is almost reached.  
 If that's the case and the next season isn't downloaded yet, _prefetcharr_ asks
 _Sonarr_ to monitor it and initiate a season search.
 
