@@ -43,7 +43,7 @@ services:
       - RUST_LOG=prefetcharr=debug
       # Polling interval in seconds
       - INTERVAL=900
-      # Minimum remaining episodes before a search
+      # The last <NUM> episodes trigger a search
       - REMAINING_EPISODES=2
     volumes:
       - /path/to/log/dir:/log
