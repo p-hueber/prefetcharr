@@ -9,7 +9,8 @@ _prefetcharr_ periodically polls your media server for active playback sessions.
 For TV shows, it checks whether the pilot is playing or if the end of a season
 is almost reached.  
 If that's the case and the next season isn't downloaded yet, _prefetcharr_ asks
-_Sonarr_ to monitor it and initiate a season search.
+_Sonarr_ to monitor it and initiate a season search. If there are no more
+seasons left, the series gets monitored for new seasons instead.
 
 ## Build and install ##
 
