@@ -59,8 +59,8 @@ struct Args {
     /// Logging directory
     #[arg(long)]
     log_dir: Option<PathBuf>,
-    /// Minimum remaining episodes before a search
-    #[arg(long, default_value_t = 2)]
+    /// The last <NUM> episodes trigger a search
+    #[arg(long, value_name = "NUM", default_value_t = 2)]
     remaining_episodes: u8,
 }
 
