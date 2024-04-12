@@ -55,7 +55,7 @@ services:
 
 ### API keys
 
-`prefetchar` needs two different API keys to do its job.
+_prefetcharr_ needs two different API keys to do its job.
 
 #### `SONARR_API_KEY`
 
