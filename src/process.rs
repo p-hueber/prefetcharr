@@ -132,8 +132,7 @@ mod test {
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/series")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/api/v3/series");
                 then.json_body(serde_json::json!(
                     [{
                             "id": 1234,
@@ -167,7 +166,6 @@ mod test {
         let put_series_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/series/1234")
-                    .query_param("apikey", "secret")
                     .method(PUT)
                     .json_body(serde_json::json!(
                         {
@@ -202,7 +200,6 @@ mod test {
         let command_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/command")
-                    .query_param("apikey", "secret")
                     .method(POST)
                     .json_body(json!({
                         "name": "SeasonSearch",
@@ -214,7 +211,7 @@ mod test {
             .await;
 
         let (tx, rx) = mpsc::channel(1);
-        let sonarr = crate::sonarr::Client::new(server.url("/pathprefix"), "secret".to_string());
+        let sonarr = crate::sonarr::Client::new(server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
             super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2)
                 .process()
@@ -243,8 +240,7 @@ mod test {
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/series")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/api/v3/series");
                 then.json_body(serde_json::json!(
                     [{
                             "id": 1234,
@@ -270,7 +266,6 @@ mod test {
         let put_series_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/series/1234")
-                    .query_param("apikey", "secret")
                     .method(PUT)
                     .json_body(serde_json::json!(
                         {
@@ -295,7 +290,7 @@ mod test {
             .await;
 
         let (tx, rx) = mpsc::channel(1);
-        let sonarr = crate::sonarr::Client::new(server.url("/pathprefix"), "secret".to_string());
+        let sonarr = crate::sonarr::Client::new(server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
             super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2)
                 .process()
@@ -323,8 +318,7 @@ mod test {
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/series")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/api/v3/series");
                 then.json_body(serde_json::json!(
                     [{
                             "id": 1234,
@@ -350,7 +344,6 @@ mod test {
         let put_series_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/series/1234")
-                    .query_param("apikey", "secret")
                     .method(PUT)
                     .json_body(serde_json::json!(
                         {
@@ -377,7 +370,6 @@ mod test {
         let command_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/command")
-                    .query_param("apikey", "secret")
                     .method(POST)
                     .json_body(json!({
                         "name": "SeasonSearch",
@@ -389,7 +381,7 @@ mod test {
             .await;
 
         let (tx, rx) = mpsc::channel(1);
-        let sonarr = crate::sonarr::Client::new(server.url("/pathprefix"), "secret".to_string());
+        let sonarr = crate::sonarr::Client::new(server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
             super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2)
                 .process()

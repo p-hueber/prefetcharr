@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use anyhow::{anyhow, Result};
-use reqwest::Url;
+use reqwest::{
+    header::{HeaderMap, HeaderValue},
+    Url,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
@@ -43,6 +46,7 @@ pub struct SessionInfo {
     other: serde_json::Value,
 }
 
+#[derive(Clone, Copy)]
 pub enum Fork {
     Jellyfin,
     Emby,
@@ -50,33 +54,49 @@ pub enum Fork {
 
 pub struct Client {
     base_url: Url,
-    api_key: String,
-    fork: Fork,
+    client: reqwest::Client,
 }
 
 impl Client {
-    pub fn new(base_url: &str, api_key: String, fork: Fork) -> Result<Self> {
+    pub fn new(base_url: &str, api_key: &str, fork: Fork) -> Result<Self> {
         let base_url = base_url.parse()?;
-        Ok(Self {
-            base_url,
-            api_key,
-            fork,
-        })
+
+        let mut headers = HeaderMap::new();
+        match fork {
+            Fork::Jellyfin => {
+                let value = format!("MediaBrowser Token=\"{api_key}\"");
+
+                let mut value = HeaderValue::from_str(&value)?;
+                value.set_sensitive(true);
+
+                headers.insert("Authorization", value);
+            }
+            Fork::Emby => {
+                let mut token = HeaderValue::from_str(api_key)?;
+                token.set_sensitive(true);
+
+                headers.insert("X-Emby-Token", token);
+            }
+        }
+
+        headers.insert(
+            reqwest::header::ACCEPT,
+            HeaderValue::from_static("application/json"),
+        );
+
+        let client = reqwest::Client::builder()
+            .default_headers(headers)
+            .build()?;
+
+        Ok(Self { base_url, client })
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let api_key_key = match self.fork {
-            Fork::Jellyfin => "apikey",
-            Fork::Emby => "api_key",
-        };
         let mut url = self.base_url.clone();
         url.path_segments_mut()
             .map_err(|()| anyhow!("url is relative"))?
             .extend(path.split('/'));
-        url.query_pairs_mut()
-            .append_pair(api_key_key, &self.api_key)
-            .finish();
-        let response = reqwest::get(url).await?.error_for_status()?;
+        let response = self.client.get(url).send().await?.error_for_status()?;
         Ok(response.json::<T>().await?)
     }
 
@@ -194,31 +214,28 @@ mod test {
 
         let sessions_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Sessions")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/Sessions");
                 then.json_body(episode());
             })
             .await;
 
         let season_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/b")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/Users/user/Items/b");
                 then.json_body(serde_json::json!({"IndexNumber": 3}));
             })
             .await;
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/a")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/Users/user/Items/a");
                 then.json_body(series());
             })
             .await;
 
         let client = embyfin::Client::new(
             &server.url("/pathprefix"),
-            "secret".to_string(),
+            "secret",
             embyfin::Fork::Jellyfin,
         )?;
 
@@ -247,8 +264,7 @@ mod test {
 
         let sessions_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Sessions")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/Sessions");
                 then.json_body(serde_json::json!(
                     [{ "invalid": "session" },
                      {
@@ -273,23 +289,21 @@ mod test {
 
         let season_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/b")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/Users/user/Items/b");
                 then.json_body(serde_json::json!({"IndexNumber": 3}));
             })
             .await;
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/a")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/Users/user/Items/a");
                 then.json_body(series());
             })
             .await;
 
         let client = embyfin::Client::new(
             &server.url("/pathprefix"),
-            "secret".to_string(),
+            "secret",
             embyfin::Fork::Jellyfin,
         )?;
 
@@ -318,24 +332,21 @@ mod test {
 
         let sessions_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Sessions")
-                    .query_param("api_key", "secret");
+                when.path("/pathprefix/Sessions");
                 then.json_body(episode());
             })
             .await;
 
         let season_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/b")
-                    .query_param("api_key", "secret");
+                when.path("/pathprefix/Users/user/Items/b");
                 then.json_body(serde_json::json!({"IndexNumber": 3}));
             })
             .await;
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/a")
-                    .query_param("api_key", "secret");
+                when.path("/pathprefix/Users/user/Items/a");
                 then.json_body(serde_json::json!({
                     "Name": "Test Show",
                     "ProviderIds": { }
@@ -343,11 +354,8 @@ mod test {
             })
             .await;
 
-        let client = embyfin::Client::new(
-            &server.url("/pathprefix"),
-            "secret".to_string(),
-            embyfin::Fork::Emby,
-        )?;
+        let client =
+            embyfin::Client::new(&server.url("/pathprefix"), "secret", embyfin::Fork::Emby)?;
 
         let (tx, mut rx) = mpsc::channel(1);
         let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
@@ -370,10 +378,7 @@ mod test {
 
     #[test]
     fn bad_url() {
-        assert!(
-            embyfin::Client::new("/notanurl", "secret".to_string(), embyfin::Fork::Jellyfin,)
-                .is_err()
-        );
+        assert!(embyfin::Client::new("/notanurl", "secret", embyfin::Fork::Jellyfin,).is_err());
     }
 
     #[tokio::test]
@@ -382,31 +387,28 @@ mod test {
 
         let _sessions_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Sessions")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/Sessions");
                 then.json_body(episode());
             })
             .await;
 
         let _season_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/b")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/Users/user/Items/b");
                 then.json_body(serde_json::json!({"IndexNumber": 3}));
             })
             .await;
 
         let _series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/a")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/Users/user/Items/a");
                 then.json_body(series());
             })
             .await;
 
         let client = embyfin::Client::new(
             &server.url("/pathprefix"),
-            "secret".to_string(),
+            "secret",
             embyfin::Fork::Jellyfin,
         )?;
 
@@ -417,6 +419,87 @@ mod test {
         let start = Instant::now();
         let _ = rx.recv().await;
         assert!(Instant::now().duration_since(start) >= Duration::from_millis(100));
+
+        watcher.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn jellyfin_auth() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let sessions_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Sessions")
+                    .header("Authorization", "MediaBrowser Token=\"secret\"");
+                then.json_body(episode());
+            })
+            .await;
+
+        let _season_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/b");
+                then.json_body(serde_json::json!({"IndexNumber": 3}));
+            })
+            .await;
+
+        let _series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/a");
+                then.json_body(series());
+            })
+            .await;
+
+        let client = embyfin::Client::new(
+            &server.url("/pathprefix"),
+            "secret",
+            embyfin::Fork::Jellyfin,
+        )?;
+
+        let (tx, mut rx) = mpsc::channel(1);
+        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
+
+        let _ = rx.recv().await;
+        sessions_mock.assert_async().await;
+
+        watcher.abort();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn emby_auth() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let sessions_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Sessions")
+                    .header("X-Emby-Token", "secret");
+                then.json_body(episode());
+            })
+            .await;
+
+        let _season_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/b");
+                then.json_body(serde_json::json!({"IndexNumber": 3}));
+            })
+            .await;
+
+        let _series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Users/user/Items/a");
+                then.json_body(series());
+            })
+            .await;
+
+        let client =
+            embyfin::Client::new(&server.url("/pathprefix"), "secret", embyfin::Fork::Emby)?;
+
+        let (tx, mut rx) = mpsc::channel(1);
+        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
+
+        let _ = rx.recv().await;
+        sessions_mock.assert_async().await;
 
         watcher.abort();
         Ok(())
