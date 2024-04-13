@@ -103,7 +103,7 @@ command-line interface by running `prefetcharr --help`.
 ### Docker installation
 
 Users utilizing Docker only need to start the container, e.g. using `docker
--compose up d  prefetcharr`.
+compose up -d prefetcharr`.
 Once the container is running, you may want to check the logs for errors. You
 can do so by either calling `docker logs prefetcharr` or by checking the logging
 directory you configured.
