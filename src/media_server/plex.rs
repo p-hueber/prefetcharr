@@ -67,6 +67,11 @@ impl Client {
                 (provider == "tvdb").then_some(id.parse().ok()?)
             })
     }
+
+    pub async fn probe(&self) -> Result<()> {
+        self.get::<Value>("status/sessions").await?;
+        Ok(())
+    }
 }
 
 impl MediaServer for Client {

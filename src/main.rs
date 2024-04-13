@@ -101,6 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &media_server_api_key,
                 embyfin::Fork::Jellyfin,
             )?;
+            client.probe().await?;
             Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Emby => {
@@ -110,16 +111,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &media_server_api_key,
                 embyfin::Fork::Emby,
             )?;
+            client.probe().await?;
             Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Plex => {
             info!("Start watching Plex sessions");
             let client = plex::Client::new(&args.media_server_url, &media_server_api_key)?;
+            client.probe().await?;
             Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
     };
 
     let sonarr_client = sonarr::Client::new(args.sonarr_url, &args.sonarr_api_key)?;
+    sonarr_client.probe().await?;
+
     let seen = Seen::default();
     let mut actor = process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes);
 

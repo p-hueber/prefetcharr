@@ -40,6 +40,15 @@ impl Client {
         Ok(response.json::<T>().await?)
     }
 
+    pub async fn probe(&self) -> Result<()> {
+        self.client
+            .get(format!("{}api", self.base_url))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
+    }
+
     pub async fn put_series(&self, series: &SeriesResource) -> Result<serde_json::Value> {
         let response = self
             .client
