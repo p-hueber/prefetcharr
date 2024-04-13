@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Trigger on pilot episodes
+- Trigger on pilot episodes.
+
+### Changed
+
+- Better reporting of errors returned by Sonarr or the media server.
+
 
 ## [0.6.0] - 2024-04-06
 

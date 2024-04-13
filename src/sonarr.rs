@@ -21,7 +21,8 @@ impl Client {
             "{}api/v3/{}?apikey={}",
             self.base_url, path, self.api_key
         ))
-        .await?;
+        .await?
+        .error_for_status()?;
         Ok(response.json::<T>().await?)
     }
 
@@ -33,7 +34,8 @@ impl Client {
             ))
             .json(series)
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
         Ok(response.json().await?)
     }
 
@@ -86,7 +88,9 @@ impl Client {
             ))
             .json(&cmd)
             .send()
-            .await?;
+            .await?
+            .error_for_status()?;
+
         Ok(response.json().await?)
     }
 }
