@@ -76,7 +76,7 @@ impl Client {
         url.query_pairs_mut()
             .append_pair(api_key_key, &self.api_key)
             .finish();
-        let response = reqwest::get(url).await?;
+        let response = reqwest::get(url).await?.error_for_status()?;
         Ok(response.json::<T>().await?)
     }
 
