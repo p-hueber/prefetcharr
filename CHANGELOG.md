@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Better reporting of errors returned by Sonarr or the media server.
+- Put all API keys into request headers instead of URL queries and never log
+  them.
 
 
 ## [0.6.0] - 2024-04-06

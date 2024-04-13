@@ -1,37 +1,49 @@
 use anyhow::{anyhow, Result};
+use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::debug;
 
 pub struct Client {
     base_url: String,
-    api_key: String,
+    client: reqwest::Client,
 }
 
 impl Client {
-    pub fn new(mut base_url: String, api_key: String) -> Self {
+    pub fn new(mut base_url: String, api_key: &str) -> Result<Self> {
+        let mut api_key = HeaderValue::from_str(api_key)?;
+        api_key.set_sensitive(true);
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Api-Key", api_key);
+        headers.insert(
+            reqwest::header::ACCEPT,
+            HeaderValue::from_static("application/json"),
+        );
+
+        let client = reqwest::Client::builder()
+            .default_headers(headers)
+            .build()?;
+
         if !base_url.ends_with('/') {
             base_url += "/";
         }
-        Self { base_url, api_key }
+        Ok(Self { base_url, client })
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let response = reqwest::get(format!(
-            "{}api/v3/{}?apikey={}",
-            self.base_url, path, self.api_key
-        ))
-        .await?
-        .error_for_status()?;
+        let response = self
+            .client
+            .get(format!("{}api/v3/{}", self.base_url, path))
+            .send()
+            .await?
+            .error_for_status()?;
         Ok(response.json::<T>().await?)
     }
 
     pub async fn put_series(&self, series: &SeriesResource) -> Result<serde_json::Value> {
-        let response = reqwest::Client::new()
-            .put(format!(
-                "{}api/v3/series/{}?apikey={}",
-                self.base_url, series.id, self.api_key
-            ))
+        let response = self
+            .client
+            .put(format!("{}api/v3/series/{}", self.base_url, series.id))
             .json(series)
             .send()
             .await?
@@ -82,10 +94,7 @@ impl Client {
         });
 
         let response = reqwest::Client::new()
-            .post(format!(
-                "{}api/v3/command?apikey={}",
-                self.base_url, self.api_key
-            ))
+            .post(format!("{}api/v3/command", self.base_url))
             .json(&cmd)
             .send()
             .await?
@@ -162,13 +171,32 @@ mod test {
     };
 
     #[tokio::test]
-    async fn series_v3() -> Result<(), Box<dyn std::error::Error>> {
+    async fn auth() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
 
         let series_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/series")
-                    .query_param("apikey", "secret");
+                    .header("X-Api-Key", "secret");
+                then.json_body(serde_json::json!([]));
+            })
+            .await;
+        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
+
+        let _ = client.series().await?;
+
+        series_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn series_v3() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series");
                 then.json_body(serde_json::json!(
                     [{
                         "id": 1234,
@@ -180,7 +208,7 @@ mod test {
                 ));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
 
         let series = client.series().await?;
         assert_eq!(series[0].id, 1234);
@@ -196,8 +224,7 @@ mod test {
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/series")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/api/v3/series");
                 then.json_body(serde_json::json!(
                     [{
                         "id": 1234,
@@ -217,7 +244,7 @@ mod test {
                 ));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
 
         let series = client.series().await?;
         assert_eq!(series.len(), 2);
@@ -233,8 +260,7 @@ mod test {
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/series")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/api/v3/series");
                 then.json_body(serde_json::json!(
                     [{
                         "id": 1234,
@@ -250,7 +276,7 @@ mod test {
                 ));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
 
         let series = client.series().await?;
         assert_eq!(series.len(), 1);
@@ -266,8 +292,7 @@ mod test {
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/series")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/api/v3/series");
                 then.json_body(serde_json::json!(
                     [{
                         "invalid": "TestShow",
@@ -282,7 +307,7 @@ mod test {
                 ));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
 
         let series = client.series().await?;
         assert_eq!(series.len(), 1);
@@ -298,12 +323,11 @@ mod test {
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/series")
-                    .query_param("apikey", "secret");
+                when.path("/pathprefix/api/v3/series");
                 then.json_body(serde_json::json!([]));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
 
         let series = client.series().await?;
         assert_eq!(series.len(), 0);
@@ -330,7 +354,6 @@ mod test {
         let series_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/series/1234")
-                    .query_param("apikey", "secret")
                     .method(PUT)
                     .json_body(serde_json::json!(
                         {
@@ -345,7 +368,7 @@ mod test {
                 then.json_body(json!({}));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
 
         client.put_series(&series).await?;
 
@@ -384,7 +407,6 @@ mod test {
         let command_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/command")
-                    .query_param("apikey", "secret")
                     .method(POST)
                     .json_body(json!({
                         "name": "SeasonSearch",
@@ -398,7 +420,6 @@ mod test {
         let series_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/series/1234")
-                    .query_param("apikey", "secret")
                     .method(PUT)
                     .json_body(serde_json::json!(
                         {
@@ -421,7 +442,7 @@ mod test {
                 then.json_body(json!({}));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret".to_string());
+        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
 
         client.search_season(&series, 1).await?;
 

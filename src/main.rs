@@ -119,7 +119,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let sonarr_client = sonarr::Client::new(args.sonarr_url, args.sonarr_api_key);
+    let sonarr_client = sonarr::Client::new(args.sonarr_url, &args.sonarr_api_key)?;
     let seen = Seen::default();
     let mut actor = process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes);
 
