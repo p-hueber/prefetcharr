@@ -10,7 +10,7 @@ use std::{
 
 use clap::{arg, command, Parser, ValueEnum};
 use tokio::sync::mpsc;
-use tracing::{info, level_filters::LevelFilter, warn};
+use tracing::{error, info, level_filters::LevelFilter, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::{
@@ -85,6 +85,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("{NAME} {VERSION}");
     warn_deprecated(&args);
 
+    if let Err(e) = run(args).await {
+        error!("{e:#}");
+        info!("{NAME} exits due to an error");
+        return Err(e.into());
+    }
+
+    Ok(())
+}
+
+async fn run(args: Args) -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel(1);
 
     // backward compat
