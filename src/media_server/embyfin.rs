@@ -104,6 +104,11 @@ impl Client {
         let path = format!("Users/{user_id}/Items/{item_id}");
         self.get(path.as_str()).await
     }
+
+    pub async fn probe(&self) -> Result<()> {
+        self.get::<Value>("System/Endpoint").await?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]

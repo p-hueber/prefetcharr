@@ -8,9 +8,10 @@ use std::{
     time::Duration,
 };
 
+use anyhow::Context as _;
 use clap::{arg, command, Parser, ValueEnum};
 use tokio::sync::mpsc;
-use tracing::{info, level_filters::LevelFilter, warn};
+use tracing::{error, info, level_filters::LevelFilter, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::{
@@ -85,6 +86,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("{NAME} {VERSION}");
     warn_deprecated(&args);
 
+    if let Err(e) = run(args).await {
+        error!("{e:#}");
+        info!("{NAME} exits due to an error");
+        return Err(e.into());
+    }
+
+    Ok(())
+}
+
+async fn run(args: Args) -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel(1);
 
     // backward compat
@@ -93,6 +104,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .or(args.jellyfin_api_key)
         .expect("using value enforced via clap");
 
+    let sonarr_client = sonarr::Client::new(&args.sonarr_url, &args.sonarr_api_key)
+        .context("Invalid connection parameters for Sonarr")?;
+    sonarr_client
+        .probe()
+        .await
+        .context("Probing Sonarr failed")?;
+
     let watcher: Pin<Box<dyn Future<Output = ()> + Send>> = match args.media_server_type {
         MediaServer::Jellyfin => {
             info!("Start watching Jellyfin sessions");
@@ -100,7 +118,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &args.media_server_url,
                 &media_server_api_key,
                 embyfin::Fork::Jellyfin,
-            )?;
+            )
+            .context("Invalid connection parameters for Jellyfin")?;
+            client.probe().await.context("Probing Jellyfin failed")?;
             Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Emby => {
@@ -109,17 +129,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &args.media_server_url,
                 &media_server_api_key,
                 embyfin::Fork::Emby,
-            )?;
+            )
+            .context("Invalid connection parameters for Emby")?;
+            client.probe().await.context("Probing Emby failed")?;
             Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Plex => {
             info!("Start watching Plex sessions");
-            let client = plex::Client::new(&args.media_server_url, &media_server_api_key)?;
+            let client = plex::Client::new(&args.media_server_url, &media_server_api_key)
+                .context("Invalid connection parameters for Plex")?;
+            client.probe().await.context("Probing Plex failed")?;
             Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
     };
 
-    let sonarr_client = sonarr::Client::new(args.sonarr_url, &args.sonarr_api_key)?;
     let seen = Seen::default();
     let mut actor = process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes);
 
