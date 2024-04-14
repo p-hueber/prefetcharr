@@ -122,7 +122,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let sonarr_client = sonarr::Client::new(args.sonarr_url, &args.sonarr_api_key)?;
+    let sonarr_client = sonarr::Client::new(&args.sonarr_url, &args.sonarr_api_key)?;
     sonarr_client.probe().await?;
 
     let seen = Seen::default();

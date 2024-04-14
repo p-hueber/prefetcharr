@@ -211,7 +211,7 @@ mod test {
             .await;
 
         let (tx, rx) = mpsc::channel(1);
-        let sonarr = crate::sonarr::Client::new(server.url("/pathprefix"), "secret")?;
+        let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
             super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2)
                 .process()
@@ -290,7 +290,7 @@ mod test {
             .await;
 
         let (tx, rx) = mpsc::channel(1);
-        let sonarr = crate::sonarr::Client::new(server.url("/pathprefix"), "secret")?;
+        let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
             super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2)
                 .process()
@@ -381,7 +381,7 @@ mod test {
             .await;
 
         let (tx, rx) = mpsc::channel(1);
-        let sonarr = crate::sonarr::Client::new(server.url("/pathprefix"), "secret")?;
+        let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
             super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2)
                 .process()

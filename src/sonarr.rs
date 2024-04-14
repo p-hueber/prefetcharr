@@ -1,16 +1,19 @@
 use anyhow::{anyhow, Result};
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::{
+    header::{HeaderMap, HeaderValue},
+    Url,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::debug;
 
 pub struct Client {
-    base_url: String,
+    base_url: Url,
     client: reqwest::Client,
 }
 
 impl Client {
-    pub fn new(mut base_url: String, api_key: &str) -> Result<Self> {
+    pub fn new(base_url: &str, api_key: &str) -> Result<Self> {
         let mut api_key = HeaderValue::from_str(api_key)?;
         api_key.set_sensitive(true);
         let mut headers = HeaderMap::new();
@@ -24,35 +27,42 @@ impl Client {
             .default_headers(headers)
             .build()?;
 
-        if !base_url.ends_with('/') {
-            base_url += "/";
-        }
+        let base_url = base_url.parse()?;
+
         Ok(Self { base_url, client })
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let response = self
-            .client
-            .get(format!("{}api/v3/{}", self.base_url, path))
-            .send()
-            .await?
-            .error_for_status()?;
+        let mut url = self.base_url.clone();
+        url.path_segments_mut()
+            .map_err(|()| anyhow!("url is relative"))?
+            .push("api")
+            .push("v3")
+            .extend(path.split('/'));
+        let response = self.client.get(url).send().await?.error_for_status()?;
         Ok(response.json::<T>().await?)
     }
 
     pub async fn probe(&self) -> Result<()> {
-        self.client
-            .get(format!("{}api", self.base_url))
-            .send()
-            .await?
-            .error_for_status()?;
+        let mut url = self.base_url.clone();
+        url.path_segments_mut()
+            .map_err(|()| anyhow!("url is relative"))?
+            .push("api");
+        self.client.get(url).send().await?.error_for_status()?;
         Ok(())
     }
 
     pub async fn put_series(&self, series: &SeriesResource) -> Result<serde_json::Value> {
+        let mut url = self.base_url.clone();
+        url.path_segments_mut()
+            .map_err(|()| anyhow!("url is relative"))?
+            .push("api")
+            .push("v3")
+            .push("series")
+            .push(&series.id.to_string());
         let response = self
             .client
-            .put(format!("{}api/v3/series/{}", self.base_url, series.id))
+            .put(url)
             .json(series)
             .send()
             .await?
@@ -102,8 +112,15 @@ impl Client {
             "seasonNumber": season_num,
         });
 
+        let mut url = self.base_url.clone();
+        url.path_segments_mut()
+            .map_err(|()| anyhow!("url is relative"))?
+            .push("api")
+            .push("v3")
+            .push("command");
+
         let response = reqwest::Client::new()
-            .post(format!("{}api/v3/command", self.base_url))
+            .post(url)
             .json(&cmd)
             .send()
             .await?
@@ -190,7 +207,7 @@ mod test {
                 then.json_body(serde_json::json!([]));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
 
         let _ = client.series().await?;
 
@@ -217,7 +234,7 @@ mod test {
                 ));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
 
         let series = client.series().await?;
         assert_eq!(series[0].id, 1234);
@@ -253,7 +270,7 @@ mod test {
                 ));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
 
         let series = client.series().await?;
         assert_eq!(series.len(), 2);
@@ -285,7 +302,7 @@ mod test {
                 ));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
 
         let series = client.series().await?;
         assert_eq!(series.len(), 1);
@@ -316,7 +333,7 @@ mod test {
                 ));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
 
         let series = client.series().await?;
         assert_eq!(series.len(), 1);
@@ -336,7 +353,7 @@ mod test {
                 then.json_body(serde_json::json!([]));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
 
         let series = client.series().await?;
         assert_eq!(series.len(), 0);
@@ -377,7 +394,7 @@ mod test {
                 then.json_body(json!({}));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
 
         client.put_series(&series).await?;
 
@@ -451,7 +468,7 @@ mod test {
                 then.json_body(json!({}));
             })
             .await;
-        let client = super::Client::new(server.url("/pathprefix"), "secret")?;
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
 
         client.search_season(&series, 1).await?;
 
