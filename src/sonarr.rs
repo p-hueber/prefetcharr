@@ -119,7 +119,8 @@ impl Client {
             .push("v3")
             .push("command");
 
-        let response = reqwest::Client::new()
+        let response = self
+            .client
             .post(url)
             .json(&cmd)
             .send()
