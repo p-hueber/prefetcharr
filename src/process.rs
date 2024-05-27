@@ -89,12 +89,12 @@ impl Actor {
             return Ok(());
         };
 
-        if !self.seen.once(np.clone()) {
+        let next_season_num = next_season.season_number;
+
+        if !self.seen.once(np.series.clone(), next_season_num) {
             debug!(now_playing = ?np, "skip previously processed item");
             return Ok(());
         }
-
-        let next_season_num = next_season.season_number;
 
         if let Some(statistics) = &next_season.statistics {
             if statistics.episode_count == statistics.total_episode_count {
