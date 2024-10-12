@@ -11,6 +11,7 @@ FROM alpine:latest
 
 ENV INTERVAL=900
 ENV REMAINING_EPISODES=2
+ENV USERS=
 
 COPY --from=builder /app/target/release/prefetcharr /
 
@@ -21,4 +22,5 @@ CMD ["sh", "-c", "./prefetcharr \
   --log-dir \"${LOG_DIR}\" \
   --interval \"${INTERVAL}\" \
   --remaining-episodes \"${REMAINING_EPISODES}\" \
+  --users \"${USERS}\" \
   "]
