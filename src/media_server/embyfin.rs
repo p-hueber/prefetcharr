@@ -41,6 +41,7 @@ struct Series {
 #[serde(rename_all = "PascalCase")]
 pub struct SessionInfo {
     user_id: String,
+    user_name: String,
     now_playing_item: Episode,
     #[serde(flatten)]
     other: serde_json::Value,
@@ -159,6 +160,8 @@ impl MediaServer for Client {
         session: Self::Session,
     ) -> std::prelude::v1::Result<NowPlaying, Self::Error> {
         let episode_num = session.now_playing_item.index_number;
+        let user_id = session.user_id.clone();
+        let user_name = session.user_name.clone();
         let ids = Ids::from(session);
 
         let series: Series = self.item(&ids.user, &ids.series).await?;
@@ -177,6 +180,8 @@ impl MediaServer for Client {
             series,
             episode: episode_num,
             season: season_num,
+            user_id,
+            user_name,
         };
 
         Ok(now_playing)
@@ -197,7 +202,8 @@ mod test {
     fn episode() -> serde_json::Value {
         serde_json::json!(
             [{
-                "UserId": "user",
+                "UserId": "08ba1929-681e-4b24-929b-9245852f65c0",
+                "UserName": "user",
                 "NowPlayingItem": {
                     "SeriesId": "a",
                     "SeasonId": "b",
@@ -226,14 +232,14 @@ mod test {
 
         let season_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/b");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/b");
                 then.json_body(serde_json::json!({"IndexNumber": 3}));
             })
             .await;
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/a");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/a");
                 then.json_body(series());
             })
             .await;
@@ -251,6 +257,8 @@ mod test {
             series: Series::Tvdb(1234),
             episode: 5,
             season: 3,
+            user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
+            user_name: "user".to_string(),
         });
 
         assert_eq!(message, Some(message_expect));
@@ -273,7 +281,8 @@ mod test {
                 then.json_body(serde_json::json!(
                     [{ "invalid": "session" },
                      {
-                        "UserId": "user",
+                        "UserId": "08ba1929-681e-4b24-929b-9245852f65c0",
+                        "UserName": "user",
                         "NowPlayingItem": {
                             "SeriesId": "invalid",
                             "SeasonId": "invalid",
@@ -281,7 +290,8 @@ mod test {
                         }
                      },
                      {
-                        "UserId": "user",
+                        "UserId": "08ba1929-681e-4b24-929b-9245852f65c0",
+                        "UserName": "user",
                         "NowPlayingItem": {
                             "SeriesId": "a",
                             "SeasonId": "b",
@@ -294,14 +304,14 @@ mod test {
 
         let season_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/b");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/b");
                 then.json_body(serde_json::json!({"IndexNumber": 3}));
             })
             .await;
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/a");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/a");
                 then.json_body(series());
             })
             .await;
@@ -319,6 +329,8 @@ mod test {
             series: Series::Tvdb(1234),
             episode: 5,
             season: 3,
+            user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
+            user_name: "user".to_string(),
         });
 
         assert_eq!(message, Some(message_expect));
@@ -344,14 +356,14 @@ mod test {
 
         let season_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/b");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/b");
                 then.json_body(serde_json::json!({"IndexNumber": 3}));
             })
             .await;
 
         let series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/a");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/a");
                 then.json_body(serde_json::json!({
                     "Name": "Test Show",
                     "ProviderIds": { }
@@ -369,6 +381,8 @@ mod test {
             series: Series::Title("Test Show".to_string()),
             episode: 5,
             season: 3,
+            user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
+            user_name: "user".to_string(),
         });
 
         assert_eq!(message, Some(message_expect));
@@ -399,14 +413,14 @@ mod test {
 
         let _season_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/b");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/b");
                 then.json_body(serde_json::json!({"IndexNumber": 3}));
             })
             .await;
 
         let _series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/a");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/a");
                 then.json_body(series());
             })
             .await;
@@ -443,14 +457,14 @@ mod test {
 
         let _season_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/b");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/b");
                 then.json_body(serde_json::json!({"IndexNumber": 3}));
             })
             .await;
 
         let _series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/a");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/a");
                 then.json_body(series());
             })
             .await;
@@ -485,14 +499,14 @@ mod test {
 
         let _season_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/b");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/b");
                 then.json_body(serde_json::json!({"IndexNumber": 3}));
             })
             .await;
 
         let _series_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/Users/user/Items/a");
+                when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/a");
                 then.json_body(series());
             })
             .await;

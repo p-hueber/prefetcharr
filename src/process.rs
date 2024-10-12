@@ -222,6 +222,8 @@ mod test {
             series: Series::Title("TestShow".to_string()),
             episode: 7,
             season: 1,
+            user_id: "12345".to_string(),
+            user_name: "test".to_string(),
         }))
         .await?;
 
@@ -301,6 +303,8 @@ mod test {
             series: Series::Tvdb(5678),
             episode: 7,
             season: 1,
+            user_id: "12345".to_string(),
+            user_name: "test".to_string(),
         }))
         .await?;
 
@@ -392,6 +396,8 @@ mod test {
             series: Series::Title("TestShow".to_string()),
             episode: 1,
             season: 1,
+            user_id: "12345".to_string(),
+            user_name: "test".to_string(),
         }))
         .await?;
 

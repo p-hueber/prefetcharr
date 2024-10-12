@@ -19,6 +19,8 @@ pub struct NowPlaying {
     pub series: Series,
     pub episode: i32,
     pub season: i32,
+    pub user_id: String,
+    pub user_name: String,
 }
 
 pub trait MediaServer: Sized {
