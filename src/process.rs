@@ -36,7 +36,7 @@ impl Actor {
 
 impl Actor {
     fn is_user_wanted(&self, np: &NowPlaying) -> bool {
-        if self.users.len() == 0 {
+        if self.users.is_empty() {
             // Always match if we have no users in the list.
             true
         } else {
@@ -135,6 +135,7 @@ impl Actor {
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_lines)]
 mod test {
     use std::time::Duration;
 
