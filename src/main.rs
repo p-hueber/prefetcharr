@@ -63,6 +63,11 @@ struct Args {
     /// The last <NUM> episodes trigger a search
     #[arg(long, value_name = "NUM", default_value_t = 2)]
     remaining_episodes: u8,
+    /// User IDs or names to monitor episodes for (default: empty/all users)
+    ///
+    /// Each entry here is checked against the user's ID and name
+    #[arg(long, value_name = "USER", value_delimiter = ',', num_args = 0..)]
+    users: Vec<String>,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -144,7 +149,8 @@ async fn run(args: Args) -> anyhow::Result<()> {
     };
 
     let seen = Seen::default();
-    let mut actor = process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes);
+    let mut actor =
+        process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes, args.users);
 
     tokio::join!(watcher, actor.process());
 

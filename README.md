@@ -47,6 +47,8 @@ services:
       - INTERVAL=900
       # The last <NUM> episodes trigger a search
       - REMAINING_EPISODES=2
+      # Only monitor sessions for specific user IDs or names
+      - USERS=john,12345,alex
     volumes:
       - /path/to/log/dir:/log
 

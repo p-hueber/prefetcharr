@@ -7,12 +7,22 @@ use super::{MediaServer, NowPlaying};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct User {
+    id: String,
+    title: String,
+    #[serde(flatten)]
+    _other: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Episode {
     grandparent_title: String,
     grandparent_key: String,
     index: i32,
     parent_index: i32,
     r#type: String,
+    user: User,
     #[serde(flatten)]
     _other: serde_json::Value,
 }
@@ -113,6 +123,8 @@ impl MediaServer for Client {
             series,
             episode,
             season,
+            user_id: session.user.id,
+            user_name: session.user.title,
         })
     }
 }
@@ -137,7 +149,12 @@ mod test {
                         "grandparentKey": "path/to/series",
                         "index": 5,
                         "parentIndex": 3,
-                        "type": "episode"
+                        "type": "episode",
+                        "user": {
+                            "id": "1",
+                            "title": "user",
+                            "thumb": "ignore"
+                        }
                     }]
                 }
             }
@@ -187,6 +204,8 @@ mod test {
             series: Series::Tvdb(1234),
             episode: 5,
             season: 3,
+            user_id: "1".to_string(),
+            user_name: "user".to_string(),
         });
 
         assert_eq!(message, Some(message_expect));
@@ -228,7 +247,12 @@ mod test {
                                     "grandparentKey": "path/to/series",
                                     "index": 5,
                                     "parentIndex": 3,
-                                    "type": "episode"
+                                    "type": "episode",
+                                    "user": {
+                                        "id": "1",
+                                        "title": "user",
+                                        "thumb": "ignore"
+                                    }
                                 }
                             ]
                         }
@@ -253,6 +277,8 @@ mod test {
             series: Series::Tvdb(1234),
             episode: 5,
             season: 3,
+            user_id: "1".to_string(),
+            user_name: "user".to_string(),
         });
 
         assert_eq!(message, Some(message_expect));
@@ -280,7 +306,12 @@ mod test {
                                     "grandparentKey": "invalid",
                                     "index": 5,
                                     "parentIndex": 3,
-                                    "type": "episode"
+                                    "type": "episode",
+                                    "user": {
+                                        "id": "1",
+                                        "title": "user",
+                                        "thumb": "ignore"
+                                    }
                                 }
                             ]
                         }
@@ -305,6 +336,8 @@ mod test {
             series: Series::Title("Test Show".to_string()),
             episode: 5,
             season: 3,
+            user_id: "1".to_string(),
+            user_name: "user".to_string(),
         });
 
         assert_eq!(message, Some(message_expect));

@@ -13,6 +13,7 @@ pub struct Actor {
     sonarr_client: sonarr::Client,
     seen: Seen,
     remaining_episodes: u8,
+    users: Vec<String>,
 }
 
 impl Actor {
@@ -21,21 +22,41 @@ impl Actor {
         sonarr_client: sonarr::Client,
         seen: Seen,
         remaining_episodes: u8,
+        users: Vec<String>,
     ) -> Self {
         Self {
             rx,
             sonarr_client,
             seen,
             remaining_episodes,
+            users,
         }
     }
 }
 
 impl Actor {
+    fn is_user_wanted(&self, np: &NowPlaying) -> bool {
+        if self.users.len() == 0 {
+            // Always match if we have no users in the list.
+            true
+        } else {
+            // Match either the user ID or user name.
+            self.users.contains(&np.user_id) || self.users.contains(&np.user_name)
+        }
+    }
+
     pub async fn process(&mut self) {
         while let Some(msg) = self.rx.recv().await {
             match msg {
                 Message::NowPlaying(np) => {
+                    if !self.is_user_wanted(&np) {
+                        debug!(
+                            now_playing = ?np,
+                            users = ?self.users,
+                            "ignoring session from unwanted user"
+                        );
+                        break;
+                    }
                     if let Err(e) = self.search_next(np).await {
                         error!(err = ?e, "Failed to process");
                     }
@@ -213,7 +234,7 @@ mod test {
         let (tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2)
+            super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2, vec![])
                 .process()
                 .await;
         });
@@ -222,6 +243,8 @@ mod test {
             series: Series::Title("TestShow".to_string()),
             episode: 7,
             season: 1,
+            user_id: "12345".to_string(),
+            user_name: "test".to_string(),
         }))
         .await?;
 
@@ -230,6 +253,196 @@ mod test {
         series_mock.assert_async().await;
         put_series_mock.assert_async().await;
         command_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn search_next_filter_users() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series");
+                then.json_body(serde_json::json!(
+                    [{
+                            "id": 1234,
+                            "title": "TestShow",
+                            "tvdbId": 5678,
+                            "monitored": false,
+                            "monitorNewItems": "all",
+                            "seasons": [{
+                                "seasonNumber": 1,
+                                "monitored": true,
+                                "statistics": {
+                                    "sizeOnDisk": 9000,
+                                    "episodeCount": 8,
+                                    "totalEpisodeCount": 8,
+                                }
+                            },{
+                                "seasonNumber": 2,
+                                "monitored": false,
+                                "statistics": {
+                                    "sizeOnDisk": 9000,
+                                    "episodeCount": 0,
+                                    "totalEpisodeCount": 8,
+                                }
+                            }]
+                        }
+                    ]
+                ));
+            })
+            .await;
+
+        let put_series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series/1234")
+                    .method(PUT)
+                    .json_body(serde_json::json!(
+                        {
+                            "id": 1234,
+                            "title": "TestShow",
+                            "tvdbId": 5678,
+                            "monitored": true,
+                            "monitorNewItems": "all",
+                            "seasons": [{
+                                "seasonNumber": 1,
+                                "monitored": true,
+                                "statistics": {
+                                    "sizeOnDisk": 9000,
+                                    "episodeCount": 8,
+                                    "totalEpisodeCount": 8,
+                                }
+                            },{
+                                "seasonNumber": 2,
+                                "monitored": true,
+                                "statistics": {
+                                    "sizeOnDisk": 9000,
+                                    "episodeCount": 0,
+                                    "totalEpisodeCount": 8,
+                                }
+                            }]
+                        }
+                    ));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let command_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/command")
+                    .method(POST)
+                    .json_body(json!({
+                        "name": "SeasonSearch",
+                        "seriesId": 1234,
+                        "seasonNumber": 2,
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let (tx, rx) = mpsc::channel(3);
+        let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
+        tokio::spawn(async move {
+            super::Actor::new(
+                rx,
+                sonarr,
+                crate::once::Seen::default(),
+                2,
+                vec!["test".to_string(), "12345".to_string()],
+            )
+            .process()
+            .await;
+        });
+
+        // Valid user ID
+        tx.send(Message::NowPlaying(NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+            user_id: "12345".to_string(),
+            user_name: "other".to_string(),
+        }))
+        .await?;
+        // Valid username
+        tx.send(Message::NowPlaying(NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+            user_id: "67890".to_string(),
+            user_name: "test".to_string(),
+        }))
+        .await?;
+        // Invalid
+        tx.send(Message::NowPlaying(NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+            user_id: "67890".to_string(),
+            user_name: "unknown".to_string(),
+        }))
+        .await?;
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // We expect 2 requests to be made for the series search - one for the
+        // valid user ID and one for the valid user name.
+        series_mock.assert_hits_async(2).await;
+        // But we only expect a single request to add the season and run a
+        // search.
+        put_series_mock.assert_async().await;
+        command_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn search_next_skips_unwanted_users() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+        let series_mock = server
+            .mock_async(|when, _| {
+                when.path("/pathprefix/api/v3/series");
+            })
+            .await;
+        let put_series_mock = server
+            .mock_async(|when, _| {
+                when.path("/pathprefix/api/v3/series/1234").method(PUT);
+            })
+            .await;
+        let command_mock = server
+            .mock_async(|when, _| {
+                when.path("/pathprefix/api/v3/command").method(POST);
+            })
+            .await;
+
+        let (tx, rx) = mpsc::channel(1);
+        let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
+        tokio::spawn(async move {
+            super::Actor::new(
+                rx,
+                sonarr,
+                crate::once::Seen::default(),
+                2,
+                vec!["test".to_string()],
+            )
+            .process()
+            .await;
+        });
+
+        tx.send(Message::NowPlaying(NowPlaying {
+            series: Series::Title("Some Unknown Show".to_string()),
+            episode: 79,
+            season: 40,
+            user_id: "12345".to_string(),
+            user_name: "unwanted".to_string(),
+        }))
+        .await?;
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        series_mock.assert_hits_async(0).await;
+        put_series_mock.assert_hits_async(0).await;
+        command_mock.assert_hits_async(0).await;
 
         Ok(())
     }
@@ -292,7 +505,7 @@ mod test {
         let (tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2)
+            super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2, vec![])
                 .process()
                 .await;
         });
@@ -301,6 +514,8 @@ mod test {
             series: Series::Tvdb(5678),
             episode: 7,
             season: 1,
+            user_id: "12345".to_string(),
+            user_name: "test".to_string(),
         }))
         .await?;
 
@@ -383,7 +598,7 @@ mod test {
         let (tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2)
+            super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2, vec![])
                 .process()
                 .await;
         });
@@ -392,6 +607,8 @@ mod test {
             series: Series::Title("TestShow".to_string()),
             episode: 1,
             season: 1,
+            user_id: "12345".to_string(),
+            user_name: "test".to_string(),
         }))
         .await?;
 
