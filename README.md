@@ -23,7 +23,6 @@ cargo install --git https://github.com/p-hueber/prefetcharr
 
 Or with docker compose:
 ```yml
-version: '3.5'
 services:
   prefetcharr:
     image: phueber/prefetcharr:latest
