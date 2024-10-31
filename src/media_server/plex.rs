@@ -22,6 +22,7 @@ pub struct Episode {
     index: i32,
     parent_index: i32,
     r#type: String,
+    #[serde(rename = "User")]
     user: User,
     #[serde(flatten)]
     _other: serde_json::Value,
@@ -150,7 +151,7 @@ mod test {
                         "index": 5,
                         "parentIndex": 3,
                         "type": "episode",
-                        "user": {
+                        "User": {
                             "id": "1",
                             "title": "user",
                             "thumb": "ignore"
@@ -248,7 +249,7 @@ mod test {
                                     "index": 5,
                                     "parentIndex": 3,
                                     "type": "episode",
-                                    "user": {
+                                    "User": {
                                         "id": "1",
                                         "title": "user",
                                         "thumb": "ignore"
@@ -307,7 +308,7 @@ mod test {
                                     "index": 5,
                                     "parentIndex": 3,
                                     "type": "episode",
-                                    "user": {
+                                    "User": {
                                         "id": "1",
                                         "title": "user",
                                         "thumb": "ignore"
