@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>prefetcharr</Name>
+  <Repository>phueber/prefetcharr:latest</Repository>
+  <Registry>https://github.com/p-hueber/prefetcharr</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support/>
+  <Project/>
+  <Overview/>
+  <Category/>
+  <WebUI/>
+  <TemplateURL/>
+  <Icon>https://avatars.githubusercontent.com/u/45110470?v=4</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled>1732836312</DateInstalled>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="Media Server Type" Target="MEDIA_SERVER_TYPE" Default="plex" Mode="" Description="jellyfin/emby/plex" Type="Variable" Display="always" Required="true" Mask="false">plex</Config>
+  <Config Name="Media Server Url" Target="MEDIA_SERVER_URL" Default="" Mode="" Description="BaseURL http://example.com/jellyfin" Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="Media Server API/Token" Target="MEDIA_SERVER_API_KEY" Default="" Mode="" Description="Jellyfin/Emby API key or plex server token" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Sonarr URL" Target="SONARR_URL" Default="" Mode="" Description="http://example.com/sonarr" Type="Variable" Display="always" Required="true" Mask="false"></Config>
+  <Config Name="Sonarr API Key" Target="SONARR_API_KEY" Default="" Mode="" Description="API key for Sonarr" Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="Logging Directory" Target="LOG_DIR" Default="/log" Mode="" Description="" Type="Variable" Display="always" Required="true" Mask="false">/log</Config>
+  <Config Name="Log level" Target="RUST_LOG" Default="prefetcharr=debug" Mode="" Description="Log level" Type="Variable" Display="always" Required="true" Mask="false">prefetcharr=debug</Config>
+  <Config Name="Polling Interval" Target="INTERVAL" Default="900" Mode="" Description="Polling interval in seconds" Type="Variable" Display="always" Required="true" Mask="false">900</Config>
+  <Config Name="Episodes Remaining Trigger" Target="REMAINING_EPISODES" Default="2" Mode="" Description="The last  episodes trigger a search" Type="Variable" Display="always" Required="true" Mask="false">2</Config>
+  <Config Name="Log directory" Target="/log" Default="/mnt/user/appdata/prefetcharr/logs" Mode="rw" Description="" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/prefetcharr/logs</Config>
+</Container>
