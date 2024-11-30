@@ -29,6 +29,6 @@
   <Config Name="Logging Directory" Target="LOG_DIR" Default="/log" Mode="" Description="" Type="Variable" Display="always" Required="true" Mask="false">/log</Config>
   <Config Name="Log level" Target="RUST_LOG" Default="prefetcharr=debug" Mode="" Description="Log level" Type="Variable" Display="always" Required="true" Mask="false">prefetcharr=debug</Config>
   <Config Name="Polling Interval" Target="INTERVAL" Default="900" Mode="" Description="Polling interval in seconds" Type="Variable" Display="always" Required="true" Mask="false">900</Config>
-  <Config Name="Episodes Remaining Trigger" Target="REMAINING_EPISODES" Default="2" Mode="" Description="The last  episodes trigger a search" Type="Variable" Display="always" Required="true" Mask="false">2</Config>
+  <Config Name="Episodes Remaining Trigger" Target="REMAINING_EPISODES" Default="2" Mode="" Description="The last X episodes trigger a search" Type="Variable" Display="always" Required="true" Mask="false">2</Config>
   <Config Name="Log directory" Target="/log" Default="/mnt/user/appdata/prefetcharr/logs" Mode="rw" Description="" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/prefetcharr/logs</Config>
 </Container>
