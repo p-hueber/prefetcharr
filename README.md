@@ -111,5 +111,7 @@ directory you configured.
 
 ### Unraid Docker installation
 
-Disable Docker in unraid. Upload my-prefetcharr.xml to /boot/config/plugins/dockerMan/templates-user. Enable Docker.
-Add new Docker image from template. (Docker> Add Container> Template> User templates> prefetcharr)
+Disable Docker in unraid.
+Upload `my-prefetcharr.xml` to `/boot/config/plugins/dockerMan/templates-user`.
+Enable Docker then add new Docker image from template.
+Manual Unraid Docker add: `(Docker> Add Container> Template> User templates> prefetcharr)`
