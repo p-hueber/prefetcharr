@@ -108,3 +108,10 @@ compose up -d prefetcharr`.
 Once the container is running, you may want to check the logs for errors. You
 can do so by either calling `docker logs prefetcharr` or by checking the logging
 directory you configured.
+
+### Unraid Docker installation
+
+Disable Docker in unraid.
+Upload `my-prefetcharr.xml` to `/boot/config/plugins/dockerMan/templates-user`.
+Enable Docker then add new Docker image from template.
+Manual Unraid Docker add: `(Docker> Add Container> Template> User templates> prefetcharr)`
