@@ -118,7 +118,9 @@ impl Actor {
         }
 
         if let Some(statistics) = &next_season.statistics {
-            if statistics.episode_file_count == statistics.total_episode_count {
+            if statistics.episode_file_count == statistics.total_episode_count
+                && statistics.total_episode_count > 0
+            {
                 debug!(num = next_season_num, "skip already downloaded season");
                 return Ok(());
             }
