@@ -136,6 +136,7 @@ impl Client {
 pub struct SeasonStatisticsResource {
     pub size_on_disk: i64,
     pub episode_count: i32,
+    pub episode_file_count: i32,
     pub total_episode_count: i32,
     #[serde(flatten)]
     other: serde_json::Value,
@@ -414,6 +415,7 @@ mod test {
             statistics: SeasonStatisticsResource {
                 size_on_disk: 9000,
                 episode_count: 8,
+                episode_file_count: 8,
                 total_episode_count: 0,
                 other: Value::Null,
             }
@@ -461,6 +463,7 @@ mod test {
                                 "statistics": {
                                     "sizeOnDisk": 9000,
                                     "episodeCount": 8,
+                                    "episodeFileCount": 8,
                                     "totalEpisodeCount": 0,
                                 }
                             }]
