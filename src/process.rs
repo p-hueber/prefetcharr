@@ -85,7 +85,7 @@ impl Actor {
         let is_only_episode = season
             .statistics
             .as_ref()
-            .is_some_and(|s| s.episode_count == 1);
+            .is_some_and(|s| s.episode_file_count == 1);
         let is_end_of_season = np.episode
             > season
                 .last_episode()
@@ -118,7 +118,7 @@ impl Actor {
         }
 
         if let Some(statistics) = &next_season.statistics {
-            if statistics.episode_count == statistics.total_episode_count {
+            if statistics.episode_file_count == statistics.total_episode_count {
                 debug!(num = next_season_num, "skip already downloaded season");
                 return Ok(());
             }
@@ -168,6 +168,7 @@ mod test {
                                 "statistics": {
                                     "sizeOnDisk": 9000,
                                     "episodeCount": 8,
+                                    "episodeFileCount": 8,
                                     "totalEpisodeCount": 8,
                                 }
                             },{
@@ -176,6 +177,7 @@ mod test {
                                 "statistics": {
                                     "sizeOnDisk": 9000,
                                     "episodeCount": 0,
+                                    "episodeFileCount": 0,
                                     "totalEpisodeCount": 8,
                                 }
                             }]
@@ -202,6 +204,7 @@ mod test {
                                 "statistics": {
                                     "sizeOnDisk": 9000,
                                     "episodeCount": 8,
+                                    "episodeFileCount": 8,
                                     "totalEpisodeCount": 8,
                                 }
                             },{
@@ -210,6 +213,7 @@ mod test {
                                 "statistics": {
                                     "sizeOnDisk": 9000,
                                     "episodeCount": 0,
+                                    "episodeFileCount": 0,
                                     "totalEpisodeCount": 8,
                                 }
                             }]
@@ -278,6 +282,7 @@ mod test {
                                 "statistics": {
                                     "sizeOnDisk": 9000,
                                     "episodeCount": 8,
+                                    "episodeFileCount": 8,
                                     "totalEpisodeCount": 8,
                                 }
                             },{
@@ -285,7 +290,8 @@ mod test {
                                 "monitored": false,
                                 "statistics": {
                                     "sizeOnDisk": 9000,
-                                    "episodeCount": 0,
+                                    "episodeCount": 8,
+                                    "episodeFileCount": 0,
                                     "totalEpisodeCount": 8,
                                 }
                             }]
@@ -312,6 +318,7 @@ mod test {
                                 "statistics": {
                                     "sizeOnDisk": 9000,
                                     "episodeCount": 8,
+                                    "episodeFileCount": 8,
                                     "totalEpisodeCount": 8,
                                 }
                             },{
@@ -319,7 +326,8 @@ mod test {
                                 "monitored": true,
                                 "statistics": {
                                     "sizeOnDisk": 9000,
-                                    "episodeCount": 0,
+                                    "episodeCount": 8,
+                                    "episodeFileCount": 0,
                                     "totalEpisodeCount": 8,
                                 }
                             }]
@@ -468,6 +476,7 @@ mod test {
                                 "statistics": {
                                     "sizeOnDisk": 9000,
                                     "episodeCount": 8,
+                                    "episodeFileCount": 8,
                                     "totalEpisodeCount": 8,
                                 }
                             }]
@@ -494,6 +503,7 @@ mod test {
                                 "statistics": {
                                     "sizeOnDisk": 9000,
                                     "episodeCount": 8,
+                                    "episodeFileCount": 8,
                                     "totalEpisodeCount": 8,
                                 }
                             }]
@@ -547,7 +557,8 @@ mod test {
                                 "monitored": true,
                                 "statistics": {
                                     "sizeOnDisk": 9000,
-                                    "episodeCount": 1,
+                                    "episodeCount": 8,
+                                    "episodeFileCount": 1,
                                     "totalEpisodeCount": 8,
                                 }
                             }]
@@ -573,7 +584,8 @@ mod test {
                                 "monitored": true,
                                 "statistics": {
                                     "sizeOnDisk": 9000,
-                                    "episodeCount": 1,
+                                    "episodeCount": 8,
+                                    "episodeFileCount": 1,
                                     "totalEpisodeCount": 8,
                                 }
                             }]
