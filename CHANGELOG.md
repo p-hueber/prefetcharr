@@ -5,12 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.8.2] - 2024-12-01
 
 ## Fixed
 
 - Use the correct episode count from Sonarr to not consider monitored episodes
   as downloaded.
+
+## Added
+
+- Add a Docker template for Unraid. ([@f0rc3d](https://github.com/f0rc3d))
 
 
 ## [0.8.1] - 2024-10-31
