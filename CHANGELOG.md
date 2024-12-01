@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use the correct episode count from Sonarr to not consider monitored episodes
   as downloaded.
 
+## Added
+
+- Add a Docker template for Unraid. ([@f0rc3d](https://github.com/f0rc3d))
+
 
 ## [0.8.1] - 2024-10-31
 
