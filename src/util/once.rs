@@ -63,7 +63,7 @@ mod test {
 
     use crate::{
         media_server::Series,
-        once::{Entry, Seen},
+        util::once::{Entry, Seen},
     };
 
     #[test]

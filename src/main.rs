@@ -16,13 +16,13 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 use crate::{
     media_server::{plex, MediaServer as _},
-    once::Seen,
+    util::once::Seen,
 };
 
 mod media_server;
-mod once;
 mod process;
 mod sonarr;
+mod util;
 
 use media_server::embyfin;
 
@@ -68,6 +68,9 @@ struct Args {
     /// Each entry here is checked against the user's ID and name
     #[arg(long, value_name = "USER", value_delimiter = ',', num_args = 0..)]
     users: Vec<String>,
+    /// Number of retries for the initial connection probing
+    #[arg(long, value_name = "NUM", default_value_t = 0)]
+    connection_retries: usize,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -111,10 +114,10 @@ async fn run(args: Args) -> anyhow::Result<()> {
 
     let sonarr_client = sonarr::Client::new(&args.sonarr_url, &args.sonarr_api_key)
         .context("Invalid connection parameters for Sonarr")?;
-    sonarr_client
-        .probe()
-        .await
-        .context("Probing Sonarr failed")?;
+    util::retry(args.connection_retries, || async {
+        sonarr_client.probe().await.context("Probing Sonarr failed")
+    })
+    .await?;
 
     let watcher: Pin<Box<dyn Future<Output = ()> + Send>> = match args.media_server_type {
         MediaServer::Jellyfin => {
