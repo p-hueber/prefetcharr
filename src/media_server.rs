@@ -3,7 +3,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, error};
 
-use crate::Message;
+use crate::{util, Message};
 
 pub mod embyfin;
 pub mod plex;
@@ -47,5 +47,9 @@ pub trait MediaServer: Sized {
             }
             tokio::time::sleep(interval).await;
         }
+    }
+    async fn probe(&self) -> Result<(), anyhow::Error>;
+    async fn probe_with_retry(&self, retries: usize) -> Result<(), anyhow::Error> {
+        util::retry(retries, || self.probe()).await
     }
 }

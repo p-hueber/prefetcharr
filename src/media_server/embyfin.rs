@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Url,
@@ -56,6 +56,7 @@ pub enum Fork {
 pub struct Client {
     base_url: Url,
     client: reqwest::Client,
+    fork: Fork,
 }
 
 impl Client {
@@ -89,7 +90,11 @@ impl Client {
             .default_headers(headers)
             .build()?;
 
-        Ok(Self { base_url, client })
+        Ok(Self {
+            base_url,
+            http: client,
+            fork,
+        })
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
@@ -104,11 +109,6 @@ impl Client {
     async fn item<T: DeserializeOwned>(&self, user_id: &str, item_id: &str) -> Result<T> {
         let path = format!("Users/{user_id}/Items/{item_id}");
         self.get(path.as_str()).await
-    }
-
-    pub async fn probe(&self) -> Result<()> {
-        self.get::<Value>("System/Endpoint").await?;
-        Ok(())
     }
 }
 
@@ -185,6 +185,17 @@ impl MediaServer for Client {
         };
 
         Ok(now_playing)
+    }
+
+    async fn probe(&self) -> std::result::Result<(), anyhow::Error> {
+        let name = match self.fork {
+            Fork::Jellyfin => "Jellyfin",
+            Fork::Emby => "Emby",
+        };
+        self.get::<Value>("System/Endpoint")
+            .await
+            .with_context(|| format!("Probing {name} failed"))?;
+        Ok(())
     }
 }
 
