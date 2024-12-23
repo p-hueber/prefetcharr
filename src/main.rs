@@ -128,7 +128,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
                 embyfin::Fork::Jellyfin,
             )
             .context("Invalid connection parameters for Jellyfin")?;
-            client.probe().await.context("Probing Jellyfin failed")?;
+            client.probe_with_retry(args.connection_retries).await?;
             Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Emby => {
@@ -139,14 +139,14 @@ async fn run(args: Args) -> anyhow::Result<()> {
                 embyfin::Fork::Emby,
             )
             .context("Invalid connection parameters for Emby")?;
-            client.probe().await.context("Probing Emby failed")?;
+            client.probe_with_retry(args.connection_retries).await?;
             Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
         MediaServer::Plex => {
             info!("Start watching Plex sessions");
             let client = plex::Client::new(&args.media_server_url, &media_server_api_key)
                 .context("Invalid connection parameters for Plex")?;
-            client.probe().await.context("Probing Plex failed")?;
+            client.probe_with_retry(args.connection_retries).await?;
             Box::pin(client.watch(Duration::from_secs(args.interval), tx))
         }
     };
