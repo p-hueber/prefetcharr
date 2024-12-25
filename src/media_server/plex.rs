@@ -1,9 +1,14 @@
 use anyhow::{anyhow, bail, Result};
+use futures::{
+    future::{BoxFuture, LocalBoxFuture},
+    stream::BoxStream,
+    FutureExt,
+};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::Value;
 
-use super::{MediaServer, NowPlaying};
+use super::{NowPlaying, ProvideNowPlaying};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,7 +34,7 @@ pub struct Episode {
 }
 
 pub struct Client {
-    client: reqwest::Client,
+    http: reqwest::Client,
     url: reqwest::Url,
 }
 
@@ -43,13 +48,13 @@ impl Client {
             reqwest::header::ACCEPT,
             HeaderValue::from_static("application/json"),
         );
-        let client = reqwest::Client::builder()
+        let http = reqwest::Client::builder()
             .default_headers(headers)
             .build()?;
 
         let url = url.parse()?;
 
-        Ok(Self { client, url })
+        Ok(Self { http, url })
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
@@ -57,7 +62,7 @@ impl Client {
         url.path_segments_mut()
             .map_err(|()| anyhow!("url is relative"))?
             .extend(path.split('/'));
-        let response = self.client.get(url).send().await?.error_for_status()?;
+        let response = self.http.get(url).send().await?.error_for_status()?;
         Ok(response.json::<T>().await?)
     }
 
@@ -80,12 +85,10 @@ impl Client {
     }
 }
 
-impl MediaServer for Client {
+impl ProvideNowPlaying for Client {
     type Session = Episode;
 
-    type Error = anyhow::Error;
-
-    async fn sessions(&self) -> std::prelude::v1::Result<Vec<Self::Session>, Self::Error> {
+    async fn sessions(&self) -> anyhow::Result<Vec<Self::Session>> {
         let obj: serde_json::Map<String, Value> = self.get("status/sessions").await?;
         Ok(obj
             .get("MediaContainer")
@@ -97,15 +100,12 @@ impl MediaServer for Client {
                     .cloned()
                     .map(serde_json::value::from_value)
                     .filter_map(Result::ok)
-                    .collect::<Vec<Episode>>()
+                    .collect::<Vec<Self::Session>>()
             })
             .unwrap_or_default())
     }
 
-    async fn extract(
-        &self,
-        session: Self::Session,
-    ) -> std::prelude::v1::Result<NowPlaying, Self::Error> {
+    async fn extract(&self, session: Self::Session) -> anyhow::Result<NowPlaying> {
         if session.r#type != "episode" {
             bail!("not an episode");
         }
@@ -123,10 +123,19 @@ impl MediaServer for Client {
             user_name: session.user.title,
         })
     }
+}
 
-    async fn probe(&self) -> std::result::Result<(), anyhow::Error> {
-        self.get::<Value>("status/sessions").await?;
-        Ok(())
+impl super::Client for Client {
+    fn now_playing(&self) -> BoxFuture<anyhow::Result<BoxStream<NowPlaying>>> {
+        ProvideNowPlaying::now_playing(self)
+    }
+
+    fn probe(&self) -> LocalBoxFuture<anyhow::Result<()>> {
+        async {
+            self.get::<Value>("status/sessions").await?;
+            Ok(())
+        }
+        .boxed_local()
     }
 }
 
@@ -134,12 +143,9 @@ impl MediaServer for Client {
 mod test {
     use std::time::Duration;
 
-    use tokio::sync::mpsc;
+    use futures::StreamExt as _;
 
-    use crate::{
-        media_server::{plex, MediaServer, NowPlaying, Series},
-        Message,
-    };
+    use crate::media_server::{plex, Client, NowPlaying, Series};
 
     fn episode() -> serde_json::Value {
         serde_json::json!(
@@ -198,23 +204,21 @@ mod test {
 
         let client = plex::Client::new(&server.url("/pathprefix"), "secret")?;
 
-        let (tx, mut rx) = mpsc::channel(1);
-        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
-        let message = rx.recv().await;
-        let message_expect = Message::NowPlaying(NowPlaying {
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let message = np_updates.next().await.transpose().unwrap();
+        let message_expect = NowPlaying {
             series: Series::Tvdb(1234),
             episode: 5,
             season: 3,
             user_id: "1".to_string(),
             user_name: "user".to_string(),
-        });
+        };
 
         assert_eq!(message, Some(message_expect));
 
         sessions_mock.assert_async().await;
         series_mock.assert_async().await;
 
-        watcher.abort();
         Ok(())
     }
 
@@ -271,23 +275,21 @@ mod test {
 
         let client = plex::Client::new(&server.url("/pathprefix"), "secret")?;
 
-        let (tx, mut rx) = mpsc::channel(1);
-        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
-        let message = rx.recv().await;
-        let message_expect = Message::NowPlaying(NowPlaying {
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let message = np_updates.next().await.transpose().unwrap();
+        let message_expect = NowPlaying {
             series: Series::Tvdb(1234),
             episode: 5,
             season: 3,
             user_id: "1".to_string(),
             user_name: "user".to_string(),
-        });
+        };
 
         assert_eq!(message, Some(message_expect));
 
         sessions_mock.assert_async().await;
         series_mock.assert_async().await;
 
-        watcher.abort();
         Ok(())
     }
 
@@ -330,23 +332,21 @@ mod test {
 
         let client = plex::Client::new(&server.url("/pathprefix"), "secret")?;
 
-        let (tx, mut rx) = mpsc::channel(1);
-        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
-        let message = rx.recv().await;
-        let message_expect = Message::NowPlaying(NowPlaying {
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let message = np_updates.next().await.transpose().unwrap();
+        let message_expect = NowPlaying {
             series: Series::Title("Test Show".to_string()),
             episode: 5,
             season: 3,
             user_id: "1".to_string(),
             user_name: "user".to_string(),
-        });
+        };
 
         assert_eq!(message, Some(message_expect));
 
         sessions_mock.assert_async().await;
         series_mock.assert_hits_async(0).await;
 
-        watcher.abort();
         Ok(())
     }
 }

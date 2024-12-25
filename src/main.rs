@@ -1,23 +1,21 @@
 #![warn(clippy::pedantic)]
 
 use std::{
-    future::Future,
+    fmt::Display,
     io::{stderr, IsTerminal},
     path::PathBuf,
-    pin::Pin,
     time::Duration,
 };
 
 use anyhow::Context as _;
 use clap::{arg, command, Parser, ValueEnum};
+use futures::{StreamExt as _, TryStreamExt};
 use tokio::sync::mpsc;
+use tokio_util::sync::PollSender;
 use tracing::{error, info, level_filters::LevelFilter, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use crate::{
-    media_server::{plex, MediaServer as _},
-    util::once::Seen,
-};
+use crate::{media_server::plex, util::once::Seen};
 
 mod media_server;
 mod process;
@@ -80,6 +78,17 @@ enum MediaServer {
     Plex,
 }
 
+impl Display for MediaServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            MediaServer::Jellyfin => "Jellyfin",
+            MediaServer::Emby => "Emby",
+            MediaServer::Plex => "Plex",
+        };
+        f.write_str(name)
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum Message {
     NowPlaying(media_server::NowPlaying),
@@ -89,7 +98,7 @@ pub enum Message {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    enable_logging(&args.log_dir);
+    enable_logging(args.log_dir.as_ref());
 
     info!("{NAME} {VERSION}");
     warn_deprecated(&args);
@@ -119,48 +128,46 @@ async fn run(args: Args) -> anyhow::Result<()> {
     })
     .await?;
 
-    let watcher: Pin<Box<dyn Future<Output = ()> + Send>> = match args.media_server_type {
-        MediaServer::Jellyfin => {
-            info!("Start watching Jellyfin sessions");
+    info!("Start watching {} sessions", args.media_server_type);
+    let interval = Duration::from_secs(args.interval);
+    let client: Box<dyn media_server::Client> = match args.media_server_type {
+        MediaServer::Emby | MediaServer::Jellyfin => {
             let client = embyfin::Client::new(
                 &args.media_server_url,
                 &media_server_api_key,
-                embyfin::Fork::Jellyfin,
+                args.media_server_type.try_into()?,
             )
-            .context("Invalid connection parameters for Jellyfin")?;
-            client.probe_with_retry(args.connection_retries).await?;
-            Box::pin(client.watch(Duration::from_secs(args.interval), tx))
-        }
-        MediaServer::Emby => {
-            info!("Start watching Emby sessions");
-            let client = embyfin::Client::new(
-                &args.media_server_url,
-                &media_server_api_key,
-                embyfin::Fork::Emby,
-            )
-            .context("Invalid connection parameters for Emby")?;
-            client.probe_with_retry(args.connection_retries).await?;
-            Box::pin(client.watch(Duration::from_secs(args.interval), tx))
+            .context("Invalid connection parameters")?;
+            Box::new(client)
         }
         MediaServer::Plex => {
-            info!("Start watching Plex sessions");
             let client = plex::Client::new(&args.media_server_url, &media_server_api_key)
-                .context("Invalid connection parameters for Plex")?;
-            client.probe_with_retry(args.connection_retries).await?;
-            Box::pin(client.watch(Duration::from_secs(args.interval), tx))
+                .context("Invalid connection parameters")?;
+            Box::new(client)
         }
     };
+
+    client.probe_with_retry(args.connection_retries).await?;
+
+    let sink = PollSender::new(tx);
+    let np_updates = client
+        .now_playing_updates(interval)
+        .inspect_err(|err| error!("Cannot fetch sessions from media server: {err}"))
+        .filter_map(|res| async move { res.ok() }) // remove errors
+        .map(Message::NowPlaying)
+        .map(Ok) // align with the error type of `PollSender`
+        .forward(sink);
 
     let seen = Seen::default();
     let mut actor =
         process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes, args.users);
 
-    tokio::join!(watcher, actor.process());
+    let _ = tokio::join!(np_updates, actor.process());
 
     Ok(())
 }
 
-fn enable_logging(log_dir: &Option<PathBuf>) {
+fn enable_logging(log_dir: Option<&PathBuf>) {
     let env_filter = EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
