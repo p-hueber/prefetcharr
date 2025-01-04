@@ -7,6 +7,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::debug;
 
+#[derive(Clone)]
 pub struct Client {
     base_url: Url,
     client: reqwest::Client,

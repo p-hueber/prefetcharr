@@ -4,8 +4,9 @@ use tracing::{debug, error, info};
 
 use crate::{
     media_server::{NowPlaying, Series},
-    once::Seen,
-    sonarr, Message,
+    sonarr,
+    util::once::Seen,
+    Message,
 };
 
 pub struct Actor {
@@ -147,6 +148,7 @@ mod test {
 
     use crate::{
         media_server::{NowPlaying, Series},
+        util::once,
         Message,
     };
 
@@ -241,7 +243,7 @@ mod test {
         let (tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2, vec![])
+            super::Actor::new(rx, sonarr, once::Seen::default(), 2, vec![])
                 .process()
                 .await;
         });
@@ -358,7 +360,7 @@ mod test {
             super::Actor::new(
                 rx,
                 sonarr,
-                crate::once::Seen::default(),
+                once::Seen::default(),
                 2,
                 vec!["test".to_string(), "12345".to_string()],
             )
@@ -432,7 +434,7 @@ mod test {
             super::Actor::new(
                 rx,
                 sonarr,
-                crate::once::Seen::default(),
+                once::Seen::default(),
                 2,
                 vec!["test".to_string()],
             )
@@ -518,7 +520,7 @@ mod test {
         let (tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2, vec![])
+            super::Actor::new(rx, sonarr, once::Seen::default(), 2, vec![])
                 .process()
                 .await;
         });
@@ -613,7 +615,7 @@ mod test {
         let (tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, crate::once::Seen::default(), 2, vec![])
+            super::Actor::new(rx, sonarr, once::Seen::default(), 2, vec![])
                 .process()
                 .await;
         });

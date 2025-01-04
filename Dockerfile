@@ -22,4 +22,5 @@ CMD ["sh", "-c", "./prefetcharr \
   --interval \"${INTERVAL}\" \
   --remaining-episodes \"${REMAINING_EPISODES}\" \
   --users ${USERS} \
+  --connection-retries 6 \
   "]

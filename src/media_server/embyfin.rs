@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use futures::{
+    future::{BoxFuture, LocalBoxFuture},
+    stream::BoxStream,
+    FutureExt,
+};
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Url,
@@ -8,7 +13,9 @@ use reqwest::{
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{MediaServer, NowPlaying};
+use crate::MediaServer;
+
+use super::{NowPlaying, ProvideNowPlaying};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -53,9 +60,22 @@ pub enum Fork {
     Emby,
 }
 
+impl TryFrom<MediaServer> for Fork {
+    type Error = anyhow::Error;
+
+    fn try_from(value: MediaServer) -> std::result::Result<Self, Self::Error> {
+        match value {
+            MediaServer::Jellyfin => Ok(Self::Jellyfin),
+            MediaServer::Emby => Ok(Self::Emby),
+            MediaServer::Plex => Err(anyhow!("media server is neither Emby nor Jellyfin")),
+        }
+    }
+}
+
 pub struct Client {
     base_url: Url,
-    client: reqwest::Client,
+    http: reqwest::Client,
+    fork: Fork,
 }
 
 impl Client {
@@ -85,11 +105,15 @@ impl Client {
             HeaderValue::from_static("application/json"),
         );
 
-        let client = reqwest::Client::builder()
+        let http = reqwest::Client::builder()
             .default_headers(headers)
             .build()?;
 
-        Ok(Self { base_url, client })
+        Ok(Self {
+            base_url,
+            http,
+            fork,
+        })
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
@@ -97,18 +121,13 @@ impl Client {
         url.path_segments_mut()
             .map_err(|()| anyhow!("url is relative"))?
             .extend(path.split('/'));
-        let response = self.client.get(url).send().await?.error_for_status()?;
+        let response = self.http.get(url).send().await?.error_for_status()?;
         Ok(response.json::<T>().await?)
     }
 
     async fn item<T: DeserializeOwned>(&self, user_id: &str, item_id: &str) -> Result<T> {
         let path = format!("Users/{user_id}/Items/{item_id}");
         self.get(path.as_str()).await
-    }
-
-    pub async fn probe(&self) -> Result<()> {
-        self.get::<Value>("System/Endpoint").await?;
-        Ok(())
     }
 }
 
@@ -140,11 +159,10 @@ impl Ids {
     }
 }
 
-impl MediaServer for Client {
+impl super::ProvideNowPlaying for Client {
     type Session = SessionInfo;
-    type Error = anyhow::Error;
 
-    async fn sessions(&self) -> std::prelude::v1::Result<Vec<Self::Session>, Self::Error> {
+    async fn sessions(&self) -> anyhow::Result<Vec<Self::Session>> {
         Ok(self
             .get::<Vec<Value>>("Sessions")
             .await?
@@ -155,10 +173,7 @@ impl MediaServer for Client {
             .collect::<Vec<Self::Session>>())
     }
 
-    async fn extract(
-        &self,
-        session: Self::Session,
-    ) -> std::prelude::v1::Result<NowPlaying, Self::Error> {
+    async fn extract(&self, session: Self::Session) -> anyhow::Result<NowPlaying> {
         let episode_num = session.now_playing_item.index_number;
         let user_id = session.user_id.clone();
         let user_name = session.user_name.clone();
@@ -188,16 +203,33 @@ impl MediaServer for Client {
     }
 }
 
+impl super::Client for Client {
+    fn now_playing(&self) -> BoxFuture<anyhow::Result<BoxStream<NowPlaying>>> {
+        ProvideNowPlaying::now_playing(self)
+    }
+
+    fn probe(&self) -> LocalBoxFuture<anyhow::Result<()>> {
+        async move {
+            let name = match self.fork {
+                Fork::Jellyfin => "Jellyfin",
+                Fork::Emby => "Emby",
+            };
+            self.get::<Value>("System/Endpoint")
+                .await
+                .with_context(|| format!("Probing {name} failed"))?;
+            Ok(())
+        }
+        .boxed_local()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::time::{Duration, Instant};
 
-    use tokio::sync::mpsc;
+    use futures::StreamExt;
 
-    use crate::{
-        media_server::{embyfin, MediaServer, NowPlaying, Series},
-        Message,
-    };
+    use crate::media_server::{embyfin, Client, NowPlaying, Series};
 
     fn episode() -> serde_json::Value {
         serde_json::json!(
@@ -250,16 +282,15 @@ mod test {
             embyfin::Fork::Jellyfin,
         )?;
 
-        let (tx, mut rx) = mpsc::channel(1);
-        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
-        let message = rx.recv().await;
-        let message_expect = Message::NowPlaying(NowPlaying {
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let message = np_updates.next().await.transpose().unwrap();
+        let message_expect = NowPlaying {
             series: Series::Tvdb(1234),
             episode: 5,
             season: 3,
             user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
             user_name: "user".to_string(),
-        });
+        };
 
         assert_eq!(message, Some(message_expect));
 
@@ -267,7 +298,6 @@ mod test {
         series_mock.assert_async().await;
         season_mock.assert_async().await;
 
-        watcher.abort();
         Ok(())
     }
 
@@ -322,16 +352,15 @@ mod test {
             embyfin::Fork::Jellyfin,
         )?;
 
-        let (tx, mut rx) = mpsc::channel(1);
-        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
-        let message = rx.recv().await;
-        let message_expect = Message::NowPlaying(NowPlaying {
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let message = np_updates.next().await.transpose().unwrap();
+        let message_expect = NowPlaying {
             series: Series::Tvdb(1234),
             episode: 5,
             season: 3,
             user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
             user_name: "user".to_string(),
-        });
+        };
 
         assert_eq!(message, Some(message_expect));
 
@@ -339,7 +368,6 @@ mod test {
         series_mock.assert_async().await;
         season_mock.assert_async().await;
 
-        watcher.abort();
         Ok(())
     }
 
@@ -374,16 +402,15 @@ mod test {
         let client =
             embyfin::Client::new(&server.url("/pathprefix"), "secret", embyfin::Fork::Emby)?;
 
-        let (tx, mut rx) = mpsc::channel(1);
-        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
-        let message = rx.recv().await;
-        let message_expect = Message::NowPlaying(NowPlaying {
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let message = np_updates.next().await.transpose().unwrap();
+        let message_expect = NowPlaying {
             series: Series::Title("Test Show".to_string()),
             episode: 5,
             season: 3,
             user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
             user_name: "user".to_string(),
-        });
+        };
 
         assert_eq!(message, Some(message_expect));
 
@@ -391,7 +418,6 @@ mod test {
         series_mock.assert_async().await;
         season_mock.assert_async().await;
 
-        watcher.abort();
         Ok(())
     }
 
@@ -431,15 +457,13 @@ mod test {
             embyfin::Fork::Jellyfin,
         )?;
 
-        let (tx, mut rx) = mpsc::channel(1);
-        let watcher = tokio::spawn(client.watch(Duration::from_millis(100), tx));
+        let mut np_updates = client.now_playing_updates(Duration::from_millis(100));
 
-        let _ = rx.recv().await;
+        let _ = np_updates.next().await;
         let start = Instant::now();
-        let _ = rx.recv().await;
+        let _ = np_updates.next().await;
         assert!(Instant::now().duration_since(start) >= Duration::from_millis(100));
 
-        watcher.abort();
         Ok(())
     }
 
@@ -475,13 +499,11 @@ mod test {
             embyfin::Fork::Jellyfin,
         )?;
 
-        let (tx, mut rx) = mpsc::channel(1);
-        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
 
-        let _ = rx.recv().await;
+        let _ = np_updates.next().await;
         sessions_mock.assert_async().await;
 
-        watcher.abort();
         Ok(())
     }
 
@@ -514,13 +536,11 @@ mod test {
         let client =
             embyfin::Client::new(&server.url("/pathprefix"), "secret", embyfin::Fork::Emby)?;
 
-        let (tx, mut rx) = mpsc::channel(1);
-        let watcher = tokio::spawn(client.watch(Duration::from_secs(100), tx));
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
 
-        let _ = rx.recv().await;
+        let _ = np_updates.next().await;
         sessions_mock.assert_async().await;
 
-        watcher.abort();
         Ok(())
     }
 }
