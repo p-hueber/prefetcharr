@@ -3,6 +3,7 @@ use reqwest::{
     header::{HeaderMap, HeaderValue},
     Url,
 };
+use rustls_platform_verifier::ConfigVerifierExt;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use tracing::debug;
@@ -26,6 +27,7 @@ impl Client {
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
+            .use_preconfigured_tls(rustls::ClientConfig::with_platform_verifier())
             .build()?;
 
         let base_url = base_url.parse()?;
