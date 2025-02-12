@@ -30,6 +30,7 @@ pub struct Episode {
     r#type: String,
     #[serde(rename = "User")]
     user: User,
+    library_section_title: String,
     #[serde(flatten)]
     _other: serde_json::Value,
 }
@@ -117,12 +118,17 @@ impl ProvideNowPlaying for Client {
             Some(id) => super::Series::Tvdb(id),
             None => super::Series::Title(session.grandparent_title),
         };
+        let user_id = session.user.id;
+        let user_name = session.user.title;
+        let library = Some(session.library_section_title);
+
         Ok(NowPlaying {
             series,
             episode,
             season,
-            user_id: session.user.id,
-            user_name: session.user.title,
+            user_id,
+            user_name,
+            library,
         })
     }
 }
@@ -163,7 +169,8 @@ mod test {
                             "id": "1",
                             "title": "user",
                             "thumb": "ignore"
-                        }
+                        },
+                        "librarySectionTitle": "TV"
                     }]
                 }
             }
@@ -214,6 +221,7 @@ mod test {
             season: 3,
             user_id: "1".to_string(),
             user_name: "user".to_string(),
+            library: Some("TV".to_string()),
         };
 
         assert_eq!(message, Some(message_expect));
@@ -255,6 +263,7 @@ mod test {
                                     "index": 5,
                                     "parentIndex": 3,
                                     "type": "episode",
+                                    "librarySectionTitle": "TV",
                                     "User": {
                                         "id": "1",
                                         "title": "user",
@@ -285,6 +294,7 @@ mod test {
             season: 3,
             user_id: "1".to_string(),
             user_name: "user".to_string(),
+            library: Some("TV".to_string()),
         };
 
         assert_eq!(message, Some(message_expect));
@@ -312,6 +322,7 @@ mod test {
                                     "index": 5,
                                     "parentIndex": 3,
                                     "type": "episode",
+                                    "librarySectionTitle": "TV",
                                     "User": {
                                         "id": "1",
                                         "title": "user",
@@ -342,6 +353,7 @@ mod test {
             season: 3,
             user_id: "1".to_string(),
             user_name: "user".to_string(),
+            library: Some("TV".to_string()),
         };
 
         assert_eq!(message, Some(message_expect));

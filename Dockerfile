@@ -21,6 +21,7 @@ CMD ["sh", "-c", "./prefetcharr \
   --log-dir \"${LOG_DIR}\" \
   --interval \"${INTERVAL}\" \
   --remaining-episodes \"${REMAINING_EPISODES}\" \
-  --users ${USERS} \
+  --users \"${USERS:---users}\" \
+  --libraries \"${LIBRARIES:---libraries}\" \
   --connection-retries 6 \
   "]

@@ -47,7 +47,9 @@ services:
       # The last <NUM> episodes trigger a search
       - REMAINING_EPISODES=2
       # Optional: Only monitor sessions for specific user IDs or names
-      # - USERS=john,12345,alex
+      # - USERS=john,12345,Axel F
+      # Optional: Only monitor sessions for specific libraries
+      # - LIBRARIES=TV Shows,Anime
     volumes:
       - /path/to/log/dir:/log
 

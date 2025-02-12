@@ -233,6 +233,7 @@ mod test {
             season: 1,
             user_id: "12345".to_string(),
             user_name: "test".to_string(),
+            library: None,
         }))
         .await?;
 
@@ -316,6 +317,7 @@ mod test {
             season: 1,
             user_id: "12345".to_string(),
             user_name: "test".to_string(),
+            library: None,
         }))
         .await?;
 
@@ -411,6 +413,7 @@ mod test {
             season: 1,
             user_id: "12345".to_string(),
             user_name: "test".to_string(),
+            library: None,
         }))
         .await?;
 

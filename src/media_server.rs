@@ -25,6 +25,7 @@ pub struct NowPlaying {
     pub season: i32,
     pub user_id: String,
     pub user_name: String,
+    pub library: Option<String>,
 }
 
 pub trait ProvideNowPlaying {
@@ -118,6 +119,7 @@ mod test {
                 season: 2,
                 user_id: "xxx".to_string(),
                 user_name: "yyy".to_string(),
+                library: None,
             },
             NowPlaying {
                 series: Series::Tvdb(3),
@@ -125,6 +127,7 @@ mod test {
                 season: 5,
                 user_id: "aaa".to_string(),
                 user_name: "bbb".to_string(),
+                library: None,
             },
         ]
     }
