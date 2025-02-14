@@ -7,7 +7,7 @@ use crate::media_server::NowPlaying;
 pub fn users(users: &[String]) -> impl FnMut(&NowPlaying) -> Ready<bool> + use<'_> {
     move |np: &NowPlaying| {
         let accept =
-            users.is_empty() || users.contains(&np.user_id) || users.contains(&np.user_name);
+            users.is_empty() || users.contains(&np.user.id) || users.contains(&np.user.name);
         if !accept {
             debug!(
                 now_playing = ?np,
@@ -36,15 +36,17 @@ pub fn libraries(libraries: &[String]) -> impl FnMut(&NowPlaying) -> Ready<bool>
 
 #[cfg(test)]
 mod test {
-    use crate::media_server::NowPlaying;
+    use crate::media_server::{NowPlaying, User};
 
     fn np_default() -> NowPlaying {
         NowPlaying {
             series: crate::media_server::Series::Tvdb(0),
             episode: 0,
             season: 0,
-            user_id: String::new(),
-            user_name: String::new(),
+            user: User {
+                name: String::new(),
+                id: String::new(),
+            },
             library: None,
         }
     }
@@ -52,12 +54,7 @@ mod test {
     #[tokio::test]
     async fn users_unrestricted() {
         let mut filter = super::users(&[]);
-        let np = NowPlaying {
-            user_id: "1".to_string(),
-            user_name: "User".to_string(),
-            ..np_default()
-        };
-        assert!(filter(&np).await);
+        assert!(filter(&np_default()).await);
     }
 
     #[tokio::test]
@@ -65,8 +62,10 @@ mod test {
         let users = vec!["Other".to_string(), "User".to_string()];
         let mut filter = super::users(users.as_slice());
         let np = NowPlaying {
-            user_id: "1".to_string(),
-            user_name: "User".to_string(),
+            user: User {
+                id: "1".to_string(),
+                name: "User".to_string(),
+            },
             ..np_default()
         };
         assert!(filter(&np).await);
@@ -77,8 +76,10 @@ mod test {
         let users = vec!["1".to_string(), "2".to_string()];
         let mut filter = super::users(users.as_slice());
         let np = NowPlaying {
-            user_id: "1".to_string(),
-            user_name: "User".to_string(),
+            user: User {
+                id: "1".to_string(),
+                name: "User".to_string(),
+            },
             ..np_default()
         };
         assert!(filter(&np).await);
@@ -88,11 +89,7 @@ mod test {
     async fn users_rejected() {
         let users = vec!["Nope".to_string()];
         let mut filter = super::users(users.as_slice());
-        let np = NowPlaying {
-            user_id: "1".to_string(),
-            user_name: "User".to_string(),
-            ..np_default()
-        };
+        let np = NowPlaying { ..np_default() };
         assert!(!filter(&np).await);
     }
 
@@ -117,7 +114,11 @@ mod test {
     async fn libraries_unknown_rejected() {
         let libraries = vec!["Nope".to_string()];
         let mut filter = super::libraries(libraries.as_slice());
-        assert!(filter(&np_default()).await);
+        let np = NowPlaying {
+            library: None,
+            ..np_default()
+        };
+        assert!(!filter(&np).await);
     }
 
     #[tokio::test]

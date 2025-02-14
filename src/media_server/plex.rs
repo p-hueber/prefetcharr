@@ -20,6 +20,15 @@ pub struct User {
     _other: serde_json::Value,
 }
 
+impl From<User> for super::User {
+    fn from(value: User) -> Self {
+        Self {
+            name: value.title,
+            id: value.id,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Episode {
@@ -118,16 +127,14 @@ impl ProvideNowPlaying for Client {
             Some(id) => super::Series::Tvdb(id),
             None => super::Series::Title(session.grandparent_title),
         };
-        let user_id = session.user.id;
-        let user_name = session.user.title;
+        let user = session.user.into();
         let library = Some(session.library_section_title);
 
         Ok(NowPlaying {
             series,
             episode,
             season,
-            user_id,
-            user_name,
+            user,
             library,
         })
     }
@@ -153,7 +160,7 @@ mod test {
 
     use futures::StreamExt as _;
 
-    use crate::media_server::{plex, Client, NowPlaying, Series};
+    use crate::media_server::{plex, test::np_default, Client, NowPlaying, Series};
 
     fn episode() -> serde_json::Value {
         serde_json::json!(
@@ -166,11 +173,11 @@ mod test {
                         "parentIndex": 3,
                         "type": "episode",
                         "User": {
-                            "id": "1",
+                            "id": "08ba1929-681e-4b24-929b-9245852f65c0",
                             "title": "user",
                             "thumb": "ignore"
                         },
-                        "librarySectionTitle": "TV"
+                        "librarySectionTitle": "TV Shows"
                     }]
                 }
             }
@@ -216,12 +223,8 @@ mod test {
         let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
-            series: Series::Tvdb(1234),
-            episode: 5,
-            season: 3,
-            user_id: "1".to_string(),
-            user_name: "user".to_string(),
-            library: Some("TV".to_string()),
+            library: Some("TV Shows".into()),
+            ..np_default()
         };
 
         assert_eq!(message, Some(message_expect));
@@ -263,9 +266,9 @@ mod test {
                                     "index": 5,
                                     "parentIndex": 3,
                                     "type": "episode",
-                                    "librarySectionTitle": "TV",
+                                    "librarySectionTitle": "TV Shows",
                                     "User": {
-                                        "id": "1",
+                                        "id": "08ba1929-681e-4b24-929b-9245852f65c0",
                                         "title": "user",
                                         "thumb": "ignore"
                                     }
@@ -289,12 +292,8 @@ mod test {
         let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
-            series: Series::Tvdb(1234),
-            episode: 5,
-            season: 3,
-            user_id: "1".to_string(),
-            user_name: "user".to_string(),
-            library: Some("TV".to_string()),
+            library: Some("TV Shows".into()),
+            ..np_default()
         };
 
         assert_eq!(message, Some(message_expect));
@@ -322,9 +321,9 @@ mod test {
                                     "index": 5,
                                     "parentIndex": 3,
                                     "type": "episode",
-                                    "librarySectionTitle": "TV",
+                                    "librarySectionTitle": "TV Shows",
                                     "User": {
-                                        "id": "1",
+                                        "id": "08ba1929-681e-4b24-929b-9245852f65c0",
                                         "title": "user",
                                         "thumb": "ignore"
                                     }
@@ -349,11 +348,8 @@ mod test {
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
             series: Series::Title("Test Show".to_string()),
-            episode: 5,
-            season: 3,
-            user_id: "1".to_string(),
-            user_name: "user".to_string(),
-            library: Some("TV".to_string()),
+            library: Some("TV Shows".into()),
+            ..np_default()
         };
 
         assert_eq!(message, Some(message_expect));

@@ -126,7 +126,7 @@ mod test {
     use tokio::sync::mpsc;
 
     use crate::{
-        media_server::{NowPlaying, Series},
+        media_server::{test::np_default, NowPlaying, Series},
         util::once,
         Message,
     };
@@ -231,9 +231,7 @@ mod test {
             series: Series::Title("TestShow".to_string()),
             episode: 7,
             season: 1,
-            user_id: "12345".to_string(),
-            user_name: "test".to_string(),
-            library: None,
+            ..np_default()
         }))
         .await?;
 
@@ -315,9 +313,7 @@ mod test {
             series: Series::Tvdb(5678),
             episode: 7,
             season: 1,
-            user_id: "12345".to_string(),
-            user_name: "test".to_string(),
-            library: None,
+            ..np_default()
         }))
         .await?;
 
@@ -411,9 +407,7 @@ mod test {
             series: Series::Title("TestShow".to_string()),
             episode: 1,
             season: 1,
-            user_id: "12345".to_string(),
-            user_name: "test".to_string(),
-            library: None,
+            ..np_default()
         }))
         .await?;
 

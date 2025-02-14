@@ -192,9 +192,10 @@ impl super::ProvideNowPlaying for Client {
     async fn extract(&self, session: Self::Session) -> anyhow::Result<NowPlaying> {
         let ids = Ids::new(&session);
         let episode_num = session.now_playing_item.index_number;
-        let user_id = session.user_id;
-        let user_name = session.user_name;
-
+        let user = super::User {
+            id: session.user_id,
+            name: session.user_name,
+        };
         let series: Series = self.item(&ids.user, &ids.series).await?;
 
         let season: Season = self.item(&ids.user, &ids.season).await?;
@@ -222,8 +223,7 @@ impl super::ProvideNowPlaying for Client {
             series,
             episode: episode_num,
             season: season_num,
-            user_id,
-            user_name,
+            user,
             library,
         };
 
@@ -257,7 +257,7 @@ mod test {
 
     use futures::StreamExt;
 
-    use crate::media_server::{embyfin, Client, NowPlaying, Series};
+    use crate::media_server::{embyfin, test::np_default, Client, NowPlaying, Series};
 
     fn episode() -> serde_json::Value {
         serde_json::json!(
@@ -399,12 +399,8 @@ mod test {
         let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
-            series: Series::Tvdb(1234),
-            episode: 5,
-            season: 3,
-            user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
-            user_name: "user".to_string(),
             library: Some("TV Shows".to_string()),
+            ..np_default()
         };
 
         assert_eq!(message, Some(message_expect));
@@ -479,14 +475,7 @@ mod test {
 
         let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
         let message = np_updates.next().await.transpose().unwrap();
-        let message_expect = NowPlaying {
-            series: Series::Tvdb(1234),
-            episode: 5,
-            season: 3,
-            user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
-            user_name: "user".to_string(),
-            library: None,
-        };
+        let message_expect = np_default();
 
         assert_eq!(message, Some(message_expect));
 
@@ -539,11 +528,7 @@ mod test {
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
             series: Series::Title("Test Show".to_string()),
-            episode: 5,
-            season: 3,
-            user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
-            user_name: "user".to_string(),
-            library: None,
+            ..np_default()
         };
 
         assert_eq!(message, Some(message_expect));
