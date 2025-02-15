@@ -17,6 +17,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 use crate::{media_server::plex, util::once::Seen};
 
+mod filter;
 mod media_server;
 mod process;
 mod sonarr;
@@ -154,13 +155,13 @@ async fn run(args: Args) -> anyhow::Result<()> {
         .now_playing_updates(interval)
         .inspect_err(|err| error!("Cannot fetch sessions from media server: {err}"))
         .filter_map(|res| async move { res.ok() }) // remove errors
+        .filter(filter::users(args.users.as_slice()))
         .map(Message::NowPlaying)
         .map(Ok) // align with the error type of `PollSender`
         .forward(sink);
 
     let seen = Seen::default();
-    let mut actor =
-        process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes, args.users);
+    let mut actor = process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes);
 
     let _ = tokio::join!(np_updates, actor.process());
 
