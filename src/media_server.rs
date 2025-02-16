@@ -23,8 +23,14 @@ pub struct NowPlaying {
     pub series: Series,
     pub episode: i32,
     pub season: i32,
-    pub user_id: String,
-    pub user_name: String,
+    pub user: User,
+    pub library: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct User {
+    pub name: String,
+    pub id: String,
 }
 
 pub trait ProvideNowPlaying {
@@ -88,7 +94,7 @@ pub trait Client {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use std::{future::ready, time::Instant};
 
     use anyhow::anyhow;
@@ -110,21 +116,32 @@ mod test {
         }
     }
 
+    pub fn np_default() -> NowPlaying {
+        NowPlaying {
+            series: Series::Tvdb(1234),
+            episode: 5,
+            season: 3,
+            user: User {
+                name: "user".to_string(),
+                id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
+            },
+            library: None,
+        }
+    }
+
     fn now_playing() -> Vec<NowPlaying> {
         vec![
             NowPlaying {
                 series: Series::Tvdb(0),
                 episode: 1,
                 season: 2,
-                user_id: "xxx".to_string(),
-                user_name: "yyy".to_string(),
+                ..np_default()
             },
             NowPlaying {
                 series: Series::Tvdb(3),
                 episode: 4,
                 season: 5,
-                user_id: "aaa".to_string(),
-                user_name: "bbb".to_string(),
+                ..np_default()
             },
         ]
     }

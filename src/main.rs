@@ -17,6 +17,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 use crate::{media_server::plex, util::once::Seen};
 
+mod filter;
 mod media_server;
 mod process;
 mod sonarr;
@@ -69,6 +70,9 @@ struct Args {
     /// Number of retries for the initial connection probing
     #[arg(long, value_name = "NUM", default_value_t = 0)]
     connection_retries: usize,
+    /// Library names to monitor episodes for. (default: empty/all libraries)
+    #[arg(long, value_name = "LIBRARY", value_delimiter = ',', num_args = 0..)]
+    libraries: Vec<String>,
 }
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -154,13 +158,14 @@ async fn run(args: Args) -> anyhow::Result<()> {
         .now_playing_updates(interval)
         .inspect_err(|err| error!("Cannot fetch sessions from media server: {err}"))
         .filter_map(|res| async move { res.ok() }) // remove errors
+        .filter(filter::users(args.users.as_slice()))
+        .filter(filter::libraries(args.libraries.as_slice()))
         .map(Message::NowPlaying)
         .map(Ok) // align with the error type of `PollSender`
         .forward(sink);
 
     let seen = Seen::default();
-    let mut actor =
-        process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes, args.users);
+    let mut actor = process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes);
 
     let _ = tokio::join!(np_updates, actor.process());
 

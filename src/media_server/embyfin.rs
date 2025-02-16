@@ -24,6 +24,7 @@ struct Episode {
     series_id: String,
     season_id: String,
     index_number: i32,
+    path: String,
     #[serde(flatten)]
     _other: serde_json::Value,
 }
@@ -51,6 +52,15 @@ pub struct SessionInfo {
     user_id: String,
     user_name: String,
     now_playing_item: Episode,
+    #[serde(flatten)]
+    other: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct VirtualFolderInfo {
+    name: String,
+    locations: Vec<String>,
     #[serde(flatten)]
     other: serde_json::Value,
 }
@@ -131,6 +141,10 @@ impl Client {
         let path = format!("Users/{user_id}/Items/{item_id}");
         self.get(path.as_str()).await
     }
+
+    async fn virtual_folders(&self) -> Result<Vec<VirtualFolderInfo>> {
+        self.get("Library/VirtualFolders").await
+    }
 }
 
 #[derive(Debug)]
@@ -176,11 +190,12 @@ impl super::ProvideNowPlaying for Client {
     }
 
     async fn extract(&self, session: Self::Session) -> anyhow::Result<NowPlaying> {
+        let ids = Ids::new(&session);
         let episode_num = session.now_playing_item.index_number;
-        let user_id = session.user_id.clone();
-        let user_name = session.user_name.clone();
-        let ids = Ids::from(session);
-
+        let user = super::User {
+            id: session.user_id,
+            name: session.user_name,
+        };
         let series: Series = self.item(&ids.user, &ids.series).await?;
 
         let season: Season = self.item(&ids.user, &ids.season).await?;
@@ -193,12 +208,23 @@ impl super::ProvideNowPlaying for Client {
             None => super::Series::Title(series.name),
         };
 
+        let item_path = session.now_playing_item.path.clone();
+        let library = {
+            let folders = self.virtual_folders().await?;
+            let folder = folders.into_iter().find(|f| {
+                f.locations
+                    .iter()
+                    .any(|l| item_path.starts_with(l.as_str()))
+            });
+            folder.map(|f| f.name)
+        };
+
         let now_playing = NowPlaying {
             series,
             episode: episode_num,
             season: season_num,
-            user_id,
-            user_name,
+            user,
+            library,
         };
 
         Ok(now_playing)
@@ -231,7 +257,7 @@ mod test {
 
     use futures::StreamExt;
 
-    use crate::media_server::{embyfin, Client, NowPlaying, Series};
+    use crate::media_server::{embyfin, test::np_default, Client, NowPlaying, Series};
 
     fn episode() -> serde_json::Value {
         serde_json::json!(
@@ -241,7 +267,8 @@ mod test {
                 "NowPlayingItem": {
                     "SeriesId": "a",
                     "SeasonId": "b",
-                    "IndexNumber": 5
+                    "IndexNumber": 5,
+                    "Path": "/media/tv/a/b/c.mkv"
                 }
             }]
         )
@@ -251,6 +278,84 @@ mod test {
             "Name": "Test Show",
             "ProviderIds": { "Tvdb": "1234" }
         })
+    }
+
+    fn virtual_folders() -> serde_json::Value {
+        serde_json::json!(
+        [
+            {
+                "Name": "Kids Movies",
+                "Locations": [
+                    "/media/KidsMovies"
+                ],
+                "CollectionType": "movies",
+                "LibraryOptions": {},
+                "ItemId": "7",
+                "Id": "7",
+                "Guid": "5ca6e6c767144c3284fb91a2f8e0523c",
+                "PrimaryImageItemId": "7"
+            },
+            {
+                "Name": "Kids TV Shows",
+                "Locations": [
+                    "/media/KidsTV"
+                ],
+                "CollectionType": "tvshows",
+                "LibraryOptions": {},
+                "ItemId": "9",
+                "Id": "9",
+                "Guid": "4a46715108f54dfc8f6418bad7e46718",
+                "PrimaryImageItemId": "9"
+            },
+            {
+                "Name": "Movies",
+                "Locations": [
+                    "/media/Movies"
+                ],
+                "CollectionType": "movies",
+                "LibraryOptions": {},
+                "ItemId": "3",
+                "Id": "3",
+                "Guid": "963293cee9894fb09580d46eddd61fe5",
+                "PrimaryImageItemId": "3"
+            },
+            {
+                "Name": "Playlists",
+                "Locations": [
+                    "/config/data/playlists",
+                    "/config/data/userplaylists"
+                ],
+                "CollectionType": "playlists",
+                "LibraryOptions": {},
+                "ItemId": "36639",
+                "Id": "36639",
+                "Guid": "04c519cbf764481e9b66448210d2c055",
+                "PrimaryImageItemId": "36639"
+            },
+            {
+                "Name": "TV Shows",
+                "Locations": [
+                    "/media/tv"
+                ],
+                "CollectionType": "tvshows",
+                "LibraryOptions": {},
+                "ItemId": "5",
+                "Id": "5",
+                "Guid": "26ee32dcd90f4607807874f09ced0fed",
+                "PrimaryImageItemId": "5"
+            },
+            {
+                "Name": "Collections",
+                "Locations": [],
+                "CollectionType": "boxsets",
+                "LibraryOptions": {},
+                "ItemId": "80071",
+                "Id": "80071",
+                "Guid": "a09546b017694aaa9f87c298823f91c0",
+                "PrimaryImageItemId": "80071"
+            }
+        ]
+                )
     }
 
     #[tokio::test]
@@ -278,6 +383,13 @@ mod test {
             })
             .await;
 
+        let folders_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Library/VirtualFolders");
+                then.json_body(virtual_folders());
+            })
+            .await;
+
         let client = embyfin::Client::new(
             &server.url("/pathprefix"),
             "secret",
@@ -287,11 +399,8 @@ mod test {
         let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
-            series: Series::Tvdb(1234),
-            episode: 5,
-            season: 3,
-            user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
-            user_name: "user".to_string(),
+            library: Some("TV Shows".to_string()),
+            ..np_default()
         };
 
         assert_eq!(message, Some(message_expect));
@@ -299,6 +408,7 @@ mod test {
         sessions_mock.assert_async().await;
         series_mock.assert_async().await;
         season_mock.assert_async().await;
+        folders_mock.assert_async().await;
 
         Ok(())
     }
@@ -318,7 +428,8 @@ mod test {
                         "NowPlayingItem": {
                             "SeriesId": "invalid",
                             "SeasonId": "invalid",
-                            "IndexNumber": 5
+                            "IndexNumber": 5,
+                            "Path": "/media/a/b/c.mkv"
                         }
                      },
                      {
@@ -327,8 +438,9 @@ mod test {
                         "NowPlayingItem": {
                             "SeriesId": "a",
                             "SeasonId": "b",
-                            "IndexNumber": 5
-                        }
+                            "IndexNumber": 5,
+                            "Path": "/media/a/b/c.mkv"
+                        },
                     }]
                 ));
             })
@@ -348,6 +460,13 @@ mod test {
             })
             .await;
 
+        let _folders_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Library/VirtualFolders");
+                then.json_body(serde_json::json!([]));
+            })
+            .await;
+
         let client = embyfin::Client::new(
             &server.url("/pathprefix"),
             "secret",
@@ -356,13 +475,7 @@ mod test {
 
         let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
         let message = np_updates.next().await.transpose().unwrap();
-        let message_expect = NowPlaying {
-            series: Series::Tvdb(1234),
-            episode: 5,
-            season: 3,
-            user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
-            user_name: "user".to_string(),
-        };
+        let message_expect = np_default();
 
         assert_eq!(message, Some(message_expect));
 
@@ -401,6 +514,13 @@ mod test {
             })
             .await;
 
+        let _folders_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Library/VirtualFolders");
+                then.json_body(serde_json::json!([]));
+            })
+            .await;
+
         let client =
             embyfin::Client::new(&server.url("/pathprefix"), "secret", embyfin::Fork::Emby)?;
 
@@ -408,10 +528,7 @@ mod test {
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
             series: Series::Title("Test Show".to_string()),
-            episode: 5,
-            season: 3,
-            user_id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
-            user_name: "user".to_string(),
+            ..np_default()
         };
 
         assert_eq!(message, Some(message_expect));
@@ -450,6 +567,13 @@ mod test {
             .mock_async(|when, then| {
                 when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/a");
                 then.json_body(series());
+            })
+            .await;
+
+        let _folders_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Library/VirtualFolders");
+                then.json_body(serde_json::json!([]));
             })
             .await;
 
@@ -495,6 +619,13 @@ mod test {
             })
             .await;
 
+        let _folders_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Library/VirtualFolders");
+                then.json_body(serde_json::json!([]));
+            })
+            .await;
+
         let client = embyfin::Client::new(
             &server.url("/pathprefix"),
             "secret",
@@ -532,6 +663,13 @@ mod test {
             .mock_async(|when, then| {
                 when.path("/pathprefix/Users/08ba1929-681e-4b24-929b-9245852f65c0/Items/a");
                 then.json_body(series());
+            })
+            .await;
+
+        let _folders_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Library/VirtualFolders");
+                then.json_body(serde_json::json!([]));
             })
             .await;
 
