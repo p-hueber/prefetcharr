@@ -54,6 +54,17 @@ services:
       - /path/to/log/dir:/log
 
 ```
+<details>
+  <summary>Unraid intructions</summary>
+
+  1. **Disable Docker** in Unraid.
+  2. Upload [my-prefetcharr.xml](https://raw.githubusercontent.com/p-hueber/prefetcharr/latest/unraid/my-prefetcharr.xml)
+     to the following directory: `/boot/config/plugins/dockerMan/templates-user`.
+  3. Once the file is uploaded, **re-enable Docker**.
+  4. To add the Docker image, go to **Docker** > **Add Container**.
+  5. Select **Template** > **User Templates** > then choose **prefetcharr**.
+</details>
+
 ## Configuration
 
 ### API keys
@@ -110,12 +121,3 @@ compose up -d prefetcharr`.
 Once the container is running, you may want to check the logs for errors. You
 can do so by either calling `docker logs prefetcharr` or by checking the logging
 directory you configured.
-
-### Unraid Docker installation
-
-1. **Disable Docker** in Unraid.
-2. Upload [my-prefetcharr.xml](https://raw.githubusercontent.com/p-hueber/prefetcharr/latest/unraid/my-prefetcharr.xml)
-   to the following directory: `/boot/config/plugins/dockerMan/templates-user`.
-3. Once the file is uploaded, **re-enable Docker**.
-4. To add the Docker image, go to **Docker** > **Add Container**.
-5. Select **Template** > **User Templates** > then choose **prefetcharr**.
