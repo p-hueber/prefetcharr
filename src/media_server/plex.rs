@@ -5,6 +5,7 @@ use futures::{
     FutureExt,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
+use rustls_platform_verifier::ConfigVerifierExt;
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::Value;
 
@@ -50,6 +51,7 @@ impl Client {
         );
         let http = reqwest::Client::builder()
             .default_headers(headers)
+            .use_preconfigured_tls(rustls::ClientConfig::with_platform_verifier())
             .build()?;
 
         let url = url.parse()?;

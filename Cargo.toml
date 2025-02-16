@@ -13,6 +13,8 @@ anyhow = "1"
 clap = { version = "4", features = ["derive", "env", "string"] }
 futures = { version = "0.3.31", default-features = false, features = ["std"] }
 reqwest = { version = "0", default-features = false, features = ["charset", "http2", "json", "rustls-tls"] }
+rustls = { version = "0.23.23", default-features = false }
+rustls-platform-verifier = "0.5.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread", "time", "sync"] }

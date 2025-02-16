@@ -10,6 +10,7 @@ use reqwest::{
     header::{HeaderMap, HeaderValue},
     Url,
 };
+use rustls_platform_verifier::ConfigVerifierExt;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
@@ -107,6 +108,7 @@ impl Client {
 
         let http = reqwest::Client::builder()
             .default_headers(headers)
+            .use_preconfigured_tls(rustls::ClientConfig::with_platform_verifier())
             .build()?;
 
         Ok(Self {
