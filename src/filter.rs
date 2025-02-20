@@ -1,10 +1,10 @@
-use std::future::{ready, Ready};
+use std::future::{Ready, ready};
 
 use tracing::debug;
 
 use crate::media_server::NowPlaying;
 
-pub fn users(users: &[String]) -> impl FnMut(&NowPlaying) -> Ready<bool> + use<'_> {
+pub fn users(users: &[String]) -> impl FnMut(&NowPlaying) -> Ready<bool> {
     move |np: &NowPlaying| {
         let accept =
             users.is_empty() || users.contains(&np.user.id) || users.contains(&np.user.name);
@@ -19,7 +19,7 @@ pub fn users(users: &[String]) -> impl FnMut(&NowPlaying) -> Ready<bool> + use<'
     }
 }
 
-pub fn libraries(libraries: &[String]) -> impl FnMut(&NowPlaying) -> Ready<bool> + use<'_> {
+pub fn libraries(libraries: &[String]) -> impl FnMut(&NowPlaying) -> Ready<bool> {
     move |np: &NowPlaying| {
         let library = np.library.as_ref();
         let accept = libraries.is_empty() || library.is_some_and(|l| libraries.contains(l));

@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use reqwest::{
-    header::{HeaderMap, HeaderValue},
     Url,
+    header::{HeaderMap, HeaderValue},
 };
 use rustls_platform_verifier::ConfigVerifierExt;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::{Value, json};
 use tracing::debug;
 
 #[derive(Clone)]
@@ -195,7 +195,7 @@ impl SeriesResource {
 #[cfg(test)]
 mod test {
     use httpmock::Method::{POST, PUT};
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     use crate::sonarr::{
         NewItemMonitorTypes, SeasonResource, SeasonStatisticsResource, SeriesResource,
