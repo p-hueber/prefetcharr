@@ -13,6 +13,7 @@ ENV INTERVAL=900
 ENV REMAINING_EPISODES=2
 
 COPY --from=builder /app/target/release/prefetcharr /
+COPY --from=builder /app/ATTRIBUTION.md /
 
 CMD ["sh", "-c", "./prefetcharr \
   --media-server-type \"${MEDIA_SERVER_TYPE}\" \
