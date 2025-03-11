@@ -1,10 +1,10 @@
 [package]
 name = "prefetcharr"
 version = "0.10.0"
-edition = "2021"
+edition = "2024"
 authors = ["Paul Hüber"]
 license = "MIT OR Apache-2.0"
-rust-version = "1.75.0"
+rust-version = "1.85.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

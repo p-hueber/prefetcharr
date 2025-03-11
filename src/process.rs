@@ -3,10 +3,10 @@ use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 use crate::{
+    Message,
     media_server::{NowPlaying, Series},
     sonarr,
     util::once::Seen,
-    Message,
 };
 
 pub struct Actor {
@@ -126,9 +126,9 @@ mod test {
     use tokio::sync::mpsc;
 
     use crate::{
-        media_server::{test::np_default, NowPlaying, Series},
-        util::once,
         Message,
+        media_server::{NowPlaying, Series, test::np_default},
+        util::once,
     };
 
     #[tokio::test]

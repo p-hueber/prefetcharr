@@ -1,10 +1,11 @@
 use std::time::Duration;
 
 use futures::{
+    FutureExt as _, StreamExt, TryStreamExt as _,
     future::{BoxFuture, LocalBoxFuture},
     stream::{self, BoxStream, LocalBoxStream},
-    FutureExt as _, StreamExt, TryStreamExt as _,
 };
+use tokio::time::MissedTickBehavior;
 use tracing::debug;
 
 use crate::util;
@@ -54,7 +55,7 @@ pub trait ProvideNowPlaying {
             let np = stream::iter(self.sessions().await?)
                 .then(|s| self.extract(s))
                 .inspect_err(|e| debug!("Ignoring session: {e}"))
-                .filter_map(|r| async move { r.ok() })
+                .filter_map(async |r| r.ok())
                 .boxed();
             Ok(np)
         }
@@ -69,19 +70,18 @@ pub trait Client {
         &self,
         interval: Duration,
     ) -> LocalBoxStream<anyhow::Result<NowPlaying>> {
-        stream::unfold(
-            (self, Duration::new(0, 0)),
-            move |(slf, delay)| async move {
-                // first iteration has zero delay
-                tokio::time::sleep(delay).await;
+        let mut interval = tokio::time::interval(interval);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
-                let item = match slf.now_playing().await {
-                    Ok(np_stream) => Ok(np_stream.map(Ok)),
-                    Err(err) => Err(err),
-                };
-                Some((item, (slf, interval)))
-            },
-        )
+        stream::unfold((self, interval), async |(slf, mut interval)| {
+            interval.tick().await;
+
+            let item = match slf.now_playing().await {
+                Ok(np_stream) => Ok(np_stream.map(Ok)),
+                Err(err) => Err(err),
+            };
+            Some((item, (slf, interval)))
+        })
         .try_flatten()
         .boxed_local()
     }

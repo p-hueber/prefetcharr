@@ -1,17 +1,17 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use futures::{
+    FutureExt,
     future::{BoxFuture, LocalBoxFuture},
     stream::BoxStream,
-    FutureExt,
 };
 use reqwest::{
-    header::{HeaderMap, HeaderValue},
     Url,
+    header::{HeaderMap, HeaderValue},
 };
 use rustls_platform_verifier::ConfigVerifierExt;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use crate::MediaServer;
@@ -257,7 +257,7 @@ mod test {
 
     use futures::StreamExt;
 
-    use crate::media_server::{embyfin, test::np_default, Client, NowPlaying, Series};
+    use crate::media_server::{Client, NowPlaying, Series, embyfin, test::np_default};
 
     fn episode() -> serde_json::Value {
         serde_json::json!(
@@ -585,10 +585,13 @@ mod test {
 
         let mut np_updates = client.now_playing_updates(Duration::from_millis(100));
 
-        let _ = np_updates.next().await;
         let start = Instant::now();
         let _ = np_updates.next().await;
-        assert!(Instant::now().duration_since(start) >= Duration::from_millis(100));
+        let tolerance = Instant::now().duration_since(start) * 2;
+
+        let start = Instant::now();
+        let _ = np_updates.next().await;
+        assert!(Instant::now().duration_since(start) >= Duration::from_millis(100) - tolerance);
 
         Ok(())
     }

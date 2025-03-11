@@ -1,12 +1,12 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use futures::{
+    FutureExt,
     future::{BoxFuture, LocalBoxFuture},
     stream::BoxStream,
-    FutureExt,
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use rustls_platform_verifier::ConfigVerifierExt;
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;
 
 use super::{NowPlaying, ProvideNowPlaying};
@@ -160,7 +160,7 @@ mod test {
 
     use futures::StreamExt as _;
 
-    use crate::media_server::{plex, test::np_default, Client, NowPlaying, Series};
+    use crate::media_server::{Client, NowPlaying, Series, plex, test::np_default};
 
     fn episode() -> serde_json::Value {
         serde_json::json!(

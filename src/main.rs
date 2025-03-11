@@ -2,18 +2,18 @@
 
 use std::{
     fmt::Display,
-    io::{stderr, IsTerminal},
+    io::{IsTerminal, stderr},
     path::PathBuf,
     time::Duration,
 };
 
 use anyhow::Context as _;
-use clap::{arg, command, Parser, ValueEnum};
+use clap::{Parser, ValueEnum, arg, command};
 use futures::{StreamExt as _, TryStreamExt};
 use tokio::sync::mpsc;
 use tokio_util::sync::PollSender;
 use tracing::{error, info, level_filters::LevelFilter, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{media_server::plex, util::once::Seen};
 
@@ -127,7 +127,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
 
     let sonarr_client = sonarr::Client::new(&args.sonarr_url, &args.sonarr_api_key)
         .context("Invalid connection parameters for Sonarr")?;
-    util::retry(args.connection_retries, || async {
+    util::retry(args.connection_retries, async || {
         sonarr_client.probe().await.context("Probing Sonarr failed")
     })
     .await?;
@@ -157,7 +157,7 @@ async fn run(args: Args) -> anyhow::Result<()> {
     let np_updates = client
         .now_playing_updates(interval)
         .inspect_err(|err| error!("Cannot fetch sessions from media server: {err}"))
-        .filter_map(|res| async move { res.ok() }) // remove errors
+        .filter_map(async |res| res.ok()) // remove errors
         .filter(filter::users(args.users.as_slice()))
         .filter(filter::libraries(args.libraries.as_slice()))
         .map(Message::NowPlaying)
