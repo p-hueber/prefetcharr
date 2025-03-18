@@ -35,18 +35,11 @@ struct Args {
     #[arg(long, default_value = "jellyfin")]
     media_server_type: MediaServer,
     /// Jellyfin/Emby/Plex baseurl
-    #[arg(long, alias = "jellyfin-url", value_name = "URL")]
+    #[arg(long, value_name = "URL")]
     media_server_url: String,
     /// Jellyfin/Emby API key or Plex server token
-    #[arg(
-        long,
-        value_name = "API_KEY",
-        required_unless_present = "jellyfin_api_key",
-        env = "MEDIA_SERVER_API_KEY"
-    )]
-    media_server_api_key: Option<String>,
-    #[arg(long, hide = true, env = "JELLYFIN_API_KEY")]
-    jellyfin_api_key: Option<String>,
+    #[arg(long, value_name = "API_KEY", env = "MEDIA_SERVER_API_KEY")]
+    media_server_api_key: String,
     /// Sonarr baseurl
     #[arg(long, value_name = "URL")]
     sonarr_url: String,
@@ -105,7 +98,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     enable_logging(args.log_dir.as_ref());
 
     info!("{NAME} {VERSION}");
-    warn_deprecated(&args);
 
     if let Err(e) = run(args).await {
         error!("{e:#}");
@@ -118,12 +110,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run(args: Args) -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel(1);
-
-    // backward compat
-    let media_server_api_key = args
-        .media_server_api_key
-        .or(args.jellyfin_api_key)
-        .expect("using value enforced via clap");
 
     let sonarr_client = sonarr::Client::new(&args.sonarr_url, &args.sonarr_api_key)
         .context("Invalid connection parameters for Sonarr")?;
@@ -138,14 +124,14 @@ async fn run(args: Args) -> anyhow::Result<()> {
         MediaServer::Emby | MediaServer::Jellyfin => {
             let client = embyfin::Client::new(
                 &args.media_server_url,
-                &media_server_api_key,
+                &args.media_server_api_key,
                 args.media_server_type.try_into()?,
             )
             .context("Invalid connection parameters")?;
             Box::new(client)
         }
         MediaServer::Plex => {
-            let client = plex::Client::new(&args.media_server_url, &media_server_api_key)
+            let client = plex::Client::new(&args.media_server_url, &args.media_server_api_key)
                 .context("Invalid connection parameters")?;
             Box::new(client)
         }
@@ -194,13 +180,4 @@ fn enable_logging(log_dir: Option<&PathBuf>) {
         .with(rolling_layer)
         .try_init()
         .expect("setting the default subscriber");
-}
-
-fn warn_deprecated(args: &Args) {
-    if std::env::args().any(|arg| arg == "--jellyfin-url") {
-        warn!("`--jellyfin-url` is deprecated. Use `--media-server-url` instead.");
-    }
-    if args.jellyfin_api_key.is_some() {
-        warn!("`JELLYFIN_API_KEY` is deprecated. Use `MEDIA_SERVER_API_KEY` instead.");
-    }
 }
