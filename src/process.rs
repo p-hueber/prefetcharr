@@ -41,7 +41,7 @@ impl Actor {
                         error!(err = ?e, "Failed to process");
                     }
                 }
-            };
+            }
         }
     }
 
