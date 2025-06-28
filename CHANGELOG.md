@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration is done through a TOML file instead of environment variables and
   CLI parameters. This change is backwards compatible.
 
+## Removed
+
+- Unmaintained Unraid instructions and template.
+
 
 ## [1.0.0] - 2025-03-18
 
