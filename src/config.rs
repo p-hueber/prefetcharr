@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
-use crate::Args;
+use crate::LegacyArgs;
 
 #[derive(Deserialize)]
 pub struct MediaServer {
@@ -13,8 +13,10 @@ pub struct MediaServer {
     /// Jellyfin/Emby API key or Plex server token
     pub api_key: String,
     /// User IDs or names to monitor episodes for (default: empty/all users)
+    #[serde(default)]
     pub users: Vec<String>,
     /// Library names to monitor episodes for. (default: empty/all libraries)
+    #[serde(default)]
     pub libraries: Vec<String>,
 }
 
@@ -38,11 +40,13 @@ pub struct Config {
     pub remaining_episodes: u8,
     /// Number of retries for the initial connection probing
     pub connection_retries: usize,
+    #[serde(default)]
+    pub legacy: bool,
 }
 
-impl From<Args> for Config {
+impl From<LegacyArgs> for Config {
     fn from(
-        Args {
+        LegacyArgs {
             media_server_type,
             media_server_url,
             media_server_api_key,
@@ -54,7 +58,7 @@ impl From<Args> for Config {
             users,
             connection_retries,
             libraries,
-        }: Args,
+        }: LegacyArgs,
     ) -> Self {
         let media_server = MediaServer {
             r#type: media_server_type,
@@ -74,6 +78,7 @@ impl From<Args> for Config {
             log_dir,
             remaining_episodes,
             connection_retries,
+            legacy: true,
         }
     }
 }
