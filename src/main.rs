@@ -9,7 +9,9 @@ use std::{
 
 use anyhow::Context as _;
 use clap::{Parser, ValueEnum, arg, command};
+use config::Config;
 use futures::{StreamExt as _, TryStreamExt};
+use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio_util::sync::PollSender;
 use tracing::{error, info, level_filters::LevelFilter, warn};
@@ -17,6 +19,7 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 
 use crate::{media_server::plex, util::once::Seen};
 
+mod config;
 mod filter;
 mod media_server;
 mod process;
@@ -68,7 +71,7 @@ struct Args {
     libraries: Vec<String>,
 }
 
-#[derive(Clone, Debug, ValueEnum)]
+#[derive(Clone, Debug, Deserialize, ValueEnum)]
 enum MediaServer {
     Jellyfin,
     Emby,
@@ -93,13 +96,13 @@ pub enum Message {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
+    let config = Config::from(Args::parse());
 
-    enable_logging(args.log_dir.as_ref());
+    enable_logging(config.log_dir.as_ref());
 
     info!("{NAME} {VERSION}");
 
-    if let Err(e) = run(args).await {
+    if let Err(e) = run(config).await {
         error!("{e:#}");
         info!("{NAME} exits due to an error");
         return Err(e.into());
@@ -108,50 +111,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn run(args: Args) -> anyhow::Result<()> {
+async fn run(config: Config) -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel(1);
 
-    let sonarr_client = sonarr::Client::new(&args.sonarr_url, &args.sonarr_api_key)
+    let sonarr_client = sonarr::Client::new(&config.sonarr.url, &config.sonarr.api_key)
         .context("Invalid connection parameters for Sonarr")?;
-    util::retry(args.connection_retries, async || {
+    util::retry(config.connection_retries, async || {
         sonarr_client.probe().await.context("Probing Sonarr failed")
     })
     .await?;
 
-    info!("Start watching {} sessions", args.media_server_type);
-    let interval = Duration::from_secs(args.interval);
-    let client: Box<dyn media_server::Client> = match args.media_server_type {
+    info!("Start watching {} sessions", config.media_server.r#type);
+    let interval = Duration::from_secs(config.interval);
+    let client: Box<dyn media_server::Client> = match config.media_server.r#type {
         MediaServer::Emby | MediaServer::Jellyfin => {
             let client = embyfin::Client::new(
-                &args.media_server_url,
-                &args.media_server_api_key,
-                args.media_server_type.try_into()?,
+                &config.media_server.url,
+                &config.media_server.api_key,
+                config.media_server.r#type.try_into()?,
             )
             .context("Invalid connection parameters")?;
             Box::new(client)
         }
         MediaServer::Plex => {
-            let client = plex::Client::new(&args.media_server_url, &args.media_server_api_key)
+            let client = plex::Client::new(&config.media_server.url, &config.media_server.api_key)
                 .context("Invalid connection parameters")?;
             Box::new(client)
         }
     };
 
-    client.probe_with_retry(args.connection_retries).await?;
+    client.probe_with_retry(config.connection_retries).await?;
 
     let sink = PollSender::new(tx);
     let np_updates = client
         .now_playing_updates(interval)
         .inspect_err(|err| error!("Cannot fetch sessions from media server: {err}"))
         .filter_map(async |res| res.ok()) // remove errors
-        .filter(filter::users(args.users.as_slice()))
-        .filter(filter::libraries(args.libraries.as_slice()))
+        .filter(filter::users(config.media_server.users.as_slice()))
+        .filter(filter::libraries(config.media_server.libraries.as_slice()))
         .map(Message::NowPlaying)
         .map(Ok) // align with the error type of `PollSender`
         .forward(sink);
 
     let seen = Seen::default();
-    let mut actor = process::Actor::new(rx, sonarr_client, seen, args.remaining_episodes);
+    let mut actor = process::Actor::new(rx, sonarr_client, seen, config.remaining_episodes);
 
     let _ = tokio::join!(np_updates, actor.process());
 
