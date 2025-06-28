@@ -2,12 +2,13 @@
 
 use std::{
     fmt::Display,
+    fs::read_to_string,
     io::{IsTerminal, stderr},
     path::PathBuf,
     time::Duration,
 };
 
-use anyhow::Context as _;
+use anyhow::Context;
 use clap::{Parser, ValueEnum, arg, command};
 use config::Config;
 use futures::{StreamExt as _, TryStreamExt};
@@ -34,6 +35,14 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    /// Path to config file
+    #[arg(long)]
+    config: PathBuf,
+}
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct LegacyArgs {
     /// Media server type
     #[arg(long, default_value = "jellyfin")]
     media_server_type: MediaServer,
@@ -94,13 +103,32 @@ pub enum Message {
     NowPlaying(media_server::NowPlaying),
 }
 
+fn config() -> anyhow::Result<Config> {
+    if let Ok(args) = LegacyArgs::try_parse() {
+        Ok(Config::from(args))
+    } else {
+        let args = Args::parse();
+        let toml = read_to_string(args.config.as_path())
+            .with_context(|| format!("reading config from {}", args.config.to_string_lossy()))?;
+        let config = toml::from_str(&toml).context("parsing TOML config")?;
+        Ok(config)
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = Config::from(Args::parse());
+    let config = config()?;
 
     enable_logging(config.log_dir.as_ref());
 
     info!("{NAME} {VERSION}");
+
+    if config.legacy {
+        warn!(
+            "Legacy configuration method detected. \
+            Migrate to the new TOML config to avoid future problems."
+        );
+    }
 
     if let Err(e) = run(config).await {
         error!("{e:#}");

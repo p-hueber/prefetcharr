@@ -28,28 +28,26 @@ services:
     image: phueber/prefetcharr:latest
     container_name: prefetcharr
     environment:
-      # `jellyfin`, `emby` or `plex`
-      - MEDIA_SERVER_TYPE=jellyfin
-      # Jellyfin/Emby/Plex baseurl
-      - MEDIA_SERVER_URL=http://example.com/jellyfin
-      # Jellyfin/Emby API key or plex server token
-      - MEDIA_SERVER_API_KEY=<YOUR KEY HERE>
-      # Sonarr baseurl
-      - SONARR_URL=http://example.com/sonarr
-      # Sonarr API key
-      - SONARR_API_KEY=<YOUR KEY HERE>
-      # Logging directory
-      - LOG_DIR=/log
-      # Log level
       - RUST_LOG=prefetcharr=debug
-      # Polling interval in seconds
-      - INTERVAL=900
-      # The last <NUM> episodes trigger a search
-      - REMAINING_EPISODES=2
-      # Optional: Only monitor sessions for specific user IDs or names
-      # - USERS=john,12345,Axel F
-      # Optional: Only monitor sessions for specific libraries
-      # - LIBRARIES=TV Shows,Anime
+      - |
+        PREFETCHARR_CONFIG=
+       
+        interval = 900           # Polling interval in seconds
+        log_dir = "/log"         # Logging directory
+        remaining_episodes = 2   # The last <NUM> episodes trigger a search
+        connection_retries = 6   # Number of retries for the initial connection probing
+
+        [media_server]
+        type = "Jellyfin"                       # `Jellyfin`, `Emby` or `Plex`
+        url = "http://example.com/jellyfin"     # Jellyfin/Emby/Plex baseurl
+        api_key = "<YOUR KEY HERE>"             # Jellyfin/Emby API key or plex server token
+        # users = [ "John", "12345", "Axel F" ] # Optional: Only monitor sessions for specific user IDs or names
+        # libraries = [ "TV Shows", "Anime" ]   # Optional: Only monitor sessions for specific libraries
+
+        [sonarr]
+        url = "http://example.com/sonarr" # Sonarr baseurl
+        api_key = "<YOUR KEY HERE>"       # Sonarr API key
+
     volumes:
       - /path/to/log/dir:/log
 
