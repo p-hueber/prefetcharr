@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+
+## Added
+
+- `request_seasons` can be set to `false` to request single episodes.
+
 ## Changed
 
 - Configuration is done through a TOML file instead of environment variables and
