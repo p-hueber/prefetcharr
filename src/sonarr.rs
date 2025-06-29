@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use reqwest::{
     Url,
     header::{HeaderMap, HeaderValue},
@@ -6,7 +6,7 @@ use reqwest::{
 use rustls_platform_verifier::ConfigVerifierExt;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use tracing::debug;
+use tracing::{debug, error, info, warn};
 
 #[derive(Clone)]
 pub struct Client {
@@ -35,15 +35,25 @@ impl Client {
         Ok(Self { base_url, client })
     }
 
-    async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+    async fn get<Out: DeserializeOwned, Param: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        params: Option<&Param>,
+    ) -> Result<Out> {
         let mut url = self.base_url.clone();
         url.path_segments_mut()
             .map_err(|()| anyhow!("url is relative"))?
             .push("api")
             .push("v3")
             .extend(path.split('/'));
-        let response = self.client.get(url).send().await?.error_for_status()?;
-        Ok(response.json::<T>().await?)
+        let get = self.client.get(url);
+        let get = if let Some(params) = params {
+            get.query(params)
+        } else {
+            get
+        };
+        let response = get.send().await?.error_for_status()?;
+        Ok(response.json::<Out>().await?)
     }
 
     pub async fn probe(&self) -> Result<()> {
@@ -75,7 +85,7 @@ impl Client {
 
     pub async fn series(&self) -> Result<Vec<SeriesResource>> {
         let series = self
-            .get::<Value>("series")
+            .get::<Value, ()>("series", None)
             .await?
             .as_array()
             .ok_or_else(|| anyhow!("not an array"))?
@@ -91,11 +101,70 @@ impl Client {
         Ok(series)
     }
 
+    pub async fn monitor_episodes(
+        &self,
+        episodes: &[EpisodeResource],
+    ) -> Result<serde_json::Value> {
+        let mut url = self.base_url.clone();
+        url.path_segments_mut()
+            .map_err(|()| anyhow!("url is relative"))?
+            .push("api")
+            .push("v3")
+            .push("episode")
+            .push("monitor");
+
+        let episode_ids: Vec<_> = episodes.iter().map(|e| e.id).collect();
+        let request = EpisodeMonitoredResource {
+            episode_ids,
+            monitored: true,
+        };
+
+        let response = self
+            .client
+            .put(url)
+            .json(&request)
+            .send()
+            .await?
+            .error_for_status()?;
+
+        Ok(response.json().await?)
+    }
+
+    pub async fn episodes(
+        &self,
+        series: &SeriesResource,
+        season_start: i32,
+        episode_start: i32,
+        num: usize,
+    ) -> Result<Vec<EpisodeResource>> {
+        let episodes = self
+            .get::<Vec<EpisodeResource>, _>("episodes", Some(&[("seriesId", series.id)]))
+            .await
+            .context("error fetching episodes")?;
+
+        let episodes = episode_window(season_start, episode_start, num, episodes);
+
+        Ok(episodes)
+    }
+
+    pub async fn search_episodes(&self, episodes: &[EpisodeResource]) -> Result<serde_json::Value> {
+        let episode_ids: Vec<_> = episodes.iter().map(|e| e.id).collect();
+        info!(?episode_ids, "Searching episodes");
+        let cmd = json!({
+            "name": "EpisodeSearch",
+            "episodeIds": episode_ids,
+        });
+
+        self.command(cmd).await
+    }
+
     pub async fn search_season(
         &self,
         series: &SeriesResource,
         season_num: i32,
     ) -> Result<serde_json::Value> {
+        info!(num = season_num, "Searching season");
+
         let series_monitored = series.monitored;
 
         let mut series = series.clone();
@@ -115,6 +184,10 @@ impl Client {
             "seasonNumber": season_num,
         });
 
+        self.command(cmd).await
+    }
+
+    async fn command(&self, cmd: Value) -> std::result::Result<Value, anyhow::Error> {
         let mut url = self.base_url.clone();
         url.path_segments_mut()
             .map_err(|()| anyhow!("url is relative"))?
@@ -132,6 +205,53 @@ impl Client {
 
         Ok(response.json().await?)
     }
+}
+
+fn episode_window(
+    season_start: i32,
+    episode_start: i32,
+    num: usize,
+    mut episodes: Vec<EpisodeResource>,
+) -> Vec<EpisodeResource> {
+    episodes.sort_by_key(|e| (e.season_number, e.episode_number));
+
+    episodes
+        .into_iter()
+        .skip_while(|ep| ep.season_number != season_start || ep.episode_number != episode_start)
+        .skip(1)
+        .scan((season_start, episode_start), |(prev_s, prev_ep), ep| {
+            let season_delta = ep.season_number.saturating_sub(*prev_s);
+            let episode_delta = ep.episode_number.saturating_sub(*prev_ep);
+            *prev_s = ep.season_number;
+            *prev_ep = ep.episode_number;
+
+            // filter gaps
+            if (season_delta == 1 && ep.episode_number == 1)
+                || (season_delta == 0 && episode_delta == 1)
+            {
+                Some(ep)
+            } else if season_delta == 0 && episode_delta == 0 {
+                warn!(?ep, "duplicated episode listing");
+                Some(ep)
+            } else {
+                error!(?ep, "gap in the episode listing");
+                None
+            }
+        })
+        .take(num)
+        .collect()
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EpisodeResource {
+    pub id: i32,
+    pub season_number: i32,
+    pub episode_number: i32,
+    pub has_file: bool,
+    pub monitored: bool,
+    #[serde(flatten)]
+    other: serde_json::Value,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -155,12 +275,6 @@ pub struct SeasonResource {
     other: serde_json::Value,
 }
 
-impl SeasonResource {
-    pub fn last_episode(&self) -> Option<i32> {
-        self.statistics.as_ref().map(|s| s.total_episode_count)
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum NewItemMonitorTypes {
@@ -182,13 +296,27 @@ pub struct SeriesResource {
     other: serde_json::Value,
 }
 
-impl SeriesResource {
-    pub fn season(&self, num: i32) -> Option<&SeasonResource> {
-        self.seasons.iter().find(|s| s.season_number == num)
-    }
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EpisodeMonitoredResource {
+    pub episode_ids: Vec<i32>,
+    pub monitored: bool,
+}
 
+impl SeriesResource {
     pub fn season_mut(&mut self, num: i32) -> Option<&mut SeasonResource> {
         self.seasons.iter_mut().find(|s| s.season_number == num)
+    }
+
+    pub fn monitor_seasons(&mut self, seasons: &[i32]) -> bool {
+        let mut changed = false;
+        for &season_id in seasons {
+            if let Some(season) = self.season_mut(season_id) {
+                changed |= !season.monitored;
+                season.monitored = true;
+            }
+        }
+        changed
     }
 }
 
@@ -198,7 +326,8 @@ mod test {
     use serde_json::{Value, json};
 
     use crate::sonarr::{
-        NewItemMonitorTypes, SeasonResource, SeasonStatisticsResource, SeriesResource,
+        EpisodeResource, NewItemMonitorTypes, SeasonResource, SeasonStatisticsResource,
+        SeriesResource,
     };
 
     #[tokio::test]
@@ -483,5 +612,120 @@ mod test {
         command_mock.assert_async().await;
 
         Ok(())
+    }
+
+    #[test]
+    fn episode_window_none() {
+        let episodes = vec![EpisodeResource {
+            ..default_episode()
+        }];
+
+        assert!(super::episode_window(1, 1, 0, episodes.clone()).is_empty());
+        assert!(super::episode_window(1, 1, 1, episodes.clone()).is_empty());
+    }
+
+    #[test]
+    fn episode_window_gap() {
+        let episodes = vec![
+            EpisodeResource {
+                episode_number: 1,
+                ..default_episode()
+            },
+            EpisodeResource {
+                episode_number: 3,
+                ..default_episode()
+            },
+        ];
+
+        assert!(super::episode_window(1, 1, 1, episodes.clone()).is_empty());
+
+        let episodes = vec![
+            EpisodeResource {
+                season_number: 1,
+                ..default_episode()
+            },
+            EpisodeResource {
+                season_number: 3,
+                ..default_episode()
+            },
+        ];
+
+        assert!(super::episode_window(1, 1, 1, episodes.clone()).is_empty());
+
+        let episodes = vec![
+            EpisodeResource {
+                episode_number: 1,
+                season_number: 1,
+                ..default_episode()
+            },
+            EpisodeResource {
+                episode_number: 2,
+                season_number: 2,
+                ..default_episode()
+            },
+        ];
+
+        assert!(super::episode_window(1, 1, 1, episodes.clone()).is_empty());
+    }
+
+    #[test]
+    fn episode_window_next_season() {
+        let episodes = vec![
+            EpisodeResource {
+                episode_number: 8,
+                season_number: 1,
+                ..default_episode()
+            },
+            EpisodeResource {
+                episode_number: 1,
+                season_number: 2,
+                ..default_episode()
+            },
+        ];
+
+        let res = super::episode_window(1, 8, 1, episodes.clone());
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].season_number, 2);
+    }
+
+    #[test]
+    fn episode_window_several() {
+        let episodes = vec![
+            EpisodeResource {
+                episode_number: 8,
+                season_number: 1,
+                ..default_episode()
+            },
+            EpisodeResource {
+                episode_number: 1,
+                season_number: 2,
+                ..default_episode()
+            },
+            EpisodeResource {
+                episode_number: 2,
+                season_number: 2,
+                ..default_episode()
+            },
+        ];
+
+        let res = super::episode_window(1, 8, 2, episodes.clone());
+        assert_eq!(res.len(), 2);
+
+        assert_eq!(res[0].episode_number, 1);
+        assert_eq!(res[0].season_number, 2);
+
+        assert_eq!(res[1].episode_number, 2);
+        assert_eq!(res[1].season_number, 2);
+    }
+
+    fn default_episode() -> EpisodeResource {
+        EpisodeResource {
+            id: 1,
+            season_number: 1,
+            episode_number: 1,
+            has_file: false,
+            monitored: false,
+            other: Value::default(),
+        }
     }
 }

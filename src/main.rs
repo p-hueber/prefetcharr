@@ -182,7 +182,13 @@ async fn run(config: Config) -> anyhow::Result<()> {
         .forward(sink);
 
     let seen = Seen::default();
-    let mut actor = process::Actor::new(rx, sonarr_client, seen, config.remaining_episodes);
+    let mut actor = process::Actor::new(
+        rx,
+        sonarr_client,
+        seen,
+        config.prefetch_num,
+        config.request_seasons,
+    );
 
     let _ = tokio::join!(np_updates, actor.process());
 

@@ -19,7 +19,7 @@ pub enum Series {
     Tvdb(i32),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct NowPlaying {
     pub series: Series,
     pub episode: i32,
@@ -28,7 +28,7 @@ pub struct NowPlaying {
     pub library: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct User {
     pub name: String,
     pub id: String,

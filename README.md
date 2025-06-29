@@ -34,7 +34,8 @@ services:
        
         interval = 900           # Polling interval in seconds
         log_dir = "/log"         # Logging directory
-        remaining_episodes = 2   # The last <NUM> episodes trigger a search
+        prefetch_num = 2         # Number of episodes to make available in advance
+        request_seasons = true   # Always request full seasons to prefer season packs
         connection_retries = 6   # Number of retries for the initial connection probing
 
         [media_server]

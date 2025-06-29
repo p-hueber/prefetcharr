@@ -36,8 +36,10 @@ pub struct Config {
     pub interval: u64,
     /// Logging directory
     pub log_dir: Option<PathBuf>,
-    /// The last <NUM> episodes trigger a search
-    pub remaining_episodes: u8,
+    /// Number of episodes to make available in advance
+    pub prefetch_num: usize,
+    /// Always request full seasons to prefer season packs
+    pub request_seasons: bool,
     /// Number of retries for the initial connection probing
     pub connection_retries: usize,
     #[serde(default)]
@@ -76,7 +78,8 @@ impl From<LegacyArgs> for Config {
             sonarr,
             interval,
             log_dir,
-            remaining_episodes,
+            prefetch_num: remaining_episodes.into(),
+            request_seasons: true,
             connection_retries,
             legacy: true,
         }
