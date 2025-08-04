@@ -138,7 +138,7 @@ impl Client {
         num: usize,
     ) -> Result<Vec<EpisodeResource>> {
         let episodes = self
-            .get::<Vec<EpisodeResource>, _>("episodes", Some(&[("seriesId", series.id)]))
+            .get::<Vec<EpisodeResource>, _>("episode", Some(&[("seriesId", series.id)]))
             .await
             .context("error fetching episodes")?;
 

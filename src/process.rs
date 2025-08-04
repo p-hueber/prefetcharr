@@ -163,7 +163,7 @@ mod test {
 
         let episodes_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/episodes")
+                when.path("/pathprefix/api/v3/episode")
                     .query_param("seriesId", "1234");
                 then.json_body(episodes());
             })
@@ -231,7 +231,7 @@ mod test {
 
         let episodes_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/episodes")
+                when.path("/pathprefix/api/v3/episode")
                     .query_param("seriesId", "1234");
                 then.json_body(episodes());
             })
@@ -317,7 +317,7 @@ mod test {
 
         let episodes_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/episodes")
+                when.path("/pathprefix/api/v3/episode")
                     .query_param("seriesId", "1234");
                 then.json_body(episodes());
             })
@@ -479,7 +479,7 @@ mod test {
 
         let episodes_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/episodes")
+                when.path("/pathprefix/api/v3/episode")
                     .query_param("seriesId", "1234");
                 then.json_body(episodes());
             })
@@ -533,7 +533,7 @@ mod test {
 
         let episodes_mock = server
             .mock_async(|when, then| {
-                when.path("/pathprefix/api/v3/episodes")
+                when.path("/pathprefix/api/v3/episode")
                     .query_param("seriesId", "1234");
                 then.json_body(episodes());
             })
