@@ -550,6 +550,18 @@ mod test {
             })
             .await;
 
+        let monitor_episodes_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode/monitor")
+                    .method(PUT)
+                    .json_body(json!({
+                        "episodeIds": [11, 12, 13, 14, 15, 16, 17, 18],
+                        "monitored": true
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
         let command_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/command")
@@ -584,6 +596,7 @@ mod test {
         series_mock.assert_async().await;
         episodes_mock.assert_async().await;
         put_series_mock.assert_async().await;
+        monitor_episodes_mock.assert_async().await;
         command_mock.assert_async().await;
 
         Ok(())
