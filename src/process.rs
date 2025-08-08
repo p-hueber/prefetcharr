@@ -178,6 +178,30 @@ mod test {
             })
             .await;
 
+        let monitor_episodes_mock_1 = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode/monitor")
+                    .method(PUT)
+                    .json_body(json!({
+                        "episodeIds": [11, 12, 13, 14, 15, 16, 17, 18],
+                        "monitored": true
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let monitor_episodes_mock_2 = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode/monitor")
+                    .method(PUT)
+                    .json_body(json!({
+                        "episodeIds": [21, 22, 23, 24, 25, 26, 27, 28],
+                        "monitored": true
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
         let command_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/command")
@@ -210,8 +234,10 @@ mod test {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         series_mock.assert_async().await;
-        episodes_mock.assert_async().await;
+        episodes_mock.assert_hits_async(3).await;
         put_series_mock.assert_async().await;
+        monitor_episodes_mock_1.assert_async().await;
+        monitor_episodes_mock_2.assert_async().await;
         command_mock.assert_async().await;
 
         Ok(())
@@ -494,6 +520,18 @@ mod test {
             })
             .await;
 
+        let monitor_episodes_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode/monitor")
+                    .method(PUT)
+                    .json_body(json!({
+                        "episodeIds": [11, 12, 13, 14, 15, 16, 17, 18],
+                        "monitored": true
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
         let (tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
@@ -513,8 +551,9 @@ mod test {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         series_mock.assert_async().await;
-        episodes_mock.assert_async().await;
+        episodes_mock.assert_hits_async(3).await;
         put_series_mock.assert_async().await;
+        monitor_episodes_mock.assert_async().await;
 
         Ok(())
     }
@@ -594,7 +633,7 @@ mod test {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         series_mock.assert_async().await;
-        episodes_mock.assert_async().await;
+        episodes_mock.assert_hits_async(2).await;
         put_series_mock.assert_async().await;
         monitor_episodes_mock.assert_async().await;
         command_mock.assert_async().await;
