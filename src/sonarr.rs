@@ -166,11 +166,26 @@ impl Client {
         info!(num = season_num, "Searching season");
 
         let series_monitored = series.monitored;
+        let series_id = series.id;
 
         let mut series = series.clone();
         let season = series
             .season_mut(season_num)
             .ok_or_else(|| anyhow!("there is no season {season_num}"))?;
+
+        if season.monitored {
+            // Ensure all episodes in the season are monitored
+            let season_episodes = self
+                .get::<Vec<EpisodeResource>, _>("episode", Some(&[("seriesId", series_id)]))
+                .await?
+                .into_iter()
+                .filter(|e| e.season_number == season_num)
+                .collect::<Vec<_>>();
+
+            if !season_episodes.is_empty() {
+                self.monitor_episodes(&season_episodes).await?;
+            }
+        }
 
         if !season.monitored || !series_monitored {
             season.monitored = true;
