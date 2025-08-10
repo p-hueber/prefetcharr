@@ -1,7 +1,7 @@
 # prefetcharr
 
-Have [Sonarr](https://sonarr.tv) automatically fetch the next episodes
-of the show you’re watching on [Jellyfin](https://jellyfin.org)/[Emby](https://emby.media)/[Plex](https://www.plex.tv).
+Have [Sonarr][sonarr] automatically fetch the next episodes of the show you’re
+watching on [Jellyfin][jellyfin]/[Emby][emby]/[Plex][plex].
 
 ## Details
 
@@ -17,8 +17,7 @@ instead.
 ## Build and install
 
 To install, first ensure Rust is installed on your system by following the
-instructions at [Install Rust](https://www.rust-lang.org/tools/install), then
-run:
+instructions at [Install Rust][rust], then run:
 ```
 cargo install --git https://github.com/p-hueber/prefetcharr
 ```
@@ -58,10 +57,10 @@ services:
 
 ## Configuration
 
-The configuration is written in [TOML](https://toml.io/en/) format. When running
-`prefetcharr` directly, you can pass the path of the configuration file using
-the `--config` command-line flag. For the Docker container, provide the entire
-configuration via the `PREFETCHARR_CONFIG` environment variable.
+The configuration is written in [TOML][toml] format. When running `prefetcharr`
+directly, you can pass the path of the configuration file using the `--config`
+command-line flag. For the Docker container, provide the entire configuration
+via the `PREFETCHARR_CONFIG` environment variable.
 A complete example can be found in the installation instructions for
 `docker-compose` above. 
 
@@ -89,8 +88,8 @@ Log in as an administrator, click on the gear on the top right and go to
 
 #### Plex
 
-You need to [extract the server token](https://www.plexopedia.com/plex-media-server/general/plex-token/#plexservertoken)
-from a configuration file and use it as the API key.
+You need to [extract the server token][plex-token] from a configuration file and
+use it as the API key.
 
 ### Upgrading pilots
 
@@ -100,10 +99,9 @@ This method works well for individual episodes but may encounter issues with
 season packs.  
 For this to function in _Sonarr_, grabbing the season pack must be considered
 an upgrade of the pilot episode.
-This can be achieved through a [custom format](https://trash-guides.info/Sonarr/sonarr-collection-of-custom-formats/#season-pack).
-[Import](https://trash-guides.info/Sonarr/sonarr-import-custom-formats/)
-the custom format and [configure a quality profile](https://trash-guides.info/Sonarr/sonarr-setup-quality-profiles/)
-to prefer it.
+This can be achieved through a [custom format][custom-format].
+[Import][format-import] the custom format and
+[configure a quality profile][quality-profile] to prefer it.
 
 ## How to use
 
@@ -119,3 +117,15 @@ compose up -d prefetcharr`.
 Once the container is running, you may want to check the logs for errors. You
 can do so by either calling `docker logs prefetcharr` or by checking the logging
 directory you configured.
+
+
+[sonarr]: <https://sonarr.tv>
+[jellyfin]: <https://jellyfin.org>
+[emby]: <https://emby.media>
+[plex]: <https://www.plex.tv>
+[rust]: <https://www.rust-lang.org/tools/install>
+[toml]: <https://toml.io/en/>
+[plex-token]: <https://www.plexopedia.com/plex-media-server/general/plex-token/#plexservertoken>
+[custom-format]: <https://trash-guides.info/Sonarr/sonarr-collection-of-custom-formats/#season-pack>
+[format-import]: <https://trash-guides.info/Sonarr/sonarr-import-custom-formats/>
+[quality-profile]: <https://trash-guides.info/Sonarr/sonarr-setup-quality-profiles/>
