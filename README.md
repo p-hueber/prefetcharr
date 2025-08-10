@@ -1,16 +1,18 @@
 # prefetcharr
 
-Let [Sonarr](https://sonarr.tv) fetch the next season of a show you are watching
-on [Jellyfin](https://jellyfin.org)/[Emby](https://emby.media)/[Plex](https://www.plex.tv).
+Have [Sonarr](https://sonarr.tv) automatically fetch the next episodes
+of the show you’re watching on [Jellyfin](https://jellyfin.org)/[Emby](https://emby.media)/[Plex](https://www.plex.tv).
 
 ## Details
 
-_prefetcharr_ periodically polls your media server for active playback sessions.
-For TV shows, it checks whether the pilot is playing or if the end of a season
-is almost reached.  
-If this is the case and the next/first season has not been downloaded yet,
-_prefetcharr_ asks _Sonarr_ to monitor it and initiate a season search. If there
-are no more seasons left, the series gets monitored for new seasons instead.
+_prefetcharr_ periodically polls your media server for active playback sessions
+of TV shows.
+It then checks whether a configured number of successive episodes is available.
+If there are episodes missing, it asks _Sonarr_ to search for them.
+Depending on the configuration, it searches the missing episodes individually or
+tries to fetch all seasons that contain them.
+If there are no more seasons left, the series is monitored for new seasons
+instead.
 
 ## Build and install
 
@@ -56,15 +58,22 @@ services:
 
 ## Configuration
 
+The configuration is written in [TOML](https://toml.io/en/) format. When running
+`prefetcharr` directly, you can pass the path of the configuration file using
+the `--config` command-line flag. For the Docker container, provide the entire
+configuration via the `PREFETCHARR_CONFIG` environment variable.
+A complete example can be found in the installation instructions for
+`docker-compose` above. 
+
 ### API keys
 
 _prefetcharr_ needs two different API keys to do its job.
 
-#### `SONARR_API_KEY`
+#### `sonarr.api_key`
 
 Go to `Settings` -> `General` -> `Security` and copy the API key.
 
-#### `MEDIA_SERVER_API_KEY`
+#### `media_server.api_key`
 
 The key to use and how to obtain it differs on the type of media server you use:
 
