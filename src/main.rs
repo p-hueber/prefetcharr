@@ -15,8 +15,8 @@ use futures::{StreamExt as _, TryStreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio_util::sync::PollSender;
-use tracing::{error, info, level_filters::LevelFilter, warn};
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing::{error, info, warn};
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{media_server::plex, util::once::Seen};
 
@@ -119,7 +119,7 @@ fn config() -> anyhow::Result<Config> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = config()?;
 
-    enable_logging(config.log_dir.as_ref());
+    enable_logging(config.log_dir.as_ref(), config.log_level);
 
     info!("{NAME} {VERSION}");
 
@@ -195,16 +195,19 @@ async fn run(config: Config) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn enable_logging(log_dir: Option<&PathBuf>) {
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .from_env_lossy();
-
+fn enable_logging(log_dir: Option<&PathBuf>, level: Option<config::LogLevel>) {
     let subscriber = tracing_subscriber::fmt()
-        .with_env_filter(env_filter)
         .with_ansi(stderr().is_terminal())
         .with_writer(stderr)
         .finish();
+
+    let filter = if let Some(level) = level {
+        tracing_subscriber::filter::Targets::new()
+            .with_target(env!("CARGO_PKG_NAME"), tracing::Level::from(level))
+            .boxed()
+    } else {
+        EnvFilter::builder().from_env_lossy().boxed()
+    };
 
     let rolling_layer = log_dir.as_ref().map(|log_dir| {
         let file_appender = tracing_appender::rolling::daily(log_dir, "prefetcharr.log");
@@ -214,6 +217,7 @@ fn enable_logging(log_dir: Option<&PathBuf>) {
     });
 
     subscriber
+        .with(filter)
         .with(rolling_layer)
         .try_init()
         .expect("setting the default subscriber");

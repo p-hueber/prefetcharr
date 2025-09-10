@@ -28,6 +28,27 @@ pub struct Sonarr {
     pub api_key: String,
 }
 
+#[derive(Clone, Copy, Deserialize)]
+pub enum LogLevel {
+    Trace,
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl From<LogLevel> for tracing::Level {
+    fn from(value: LogLevel) -> Self {
+        match value {
+            LogLevel::Trace => tracing::Level::TRACE,
+            LogLevel::Debug => tracing::Level::DEBUG,
+            LogLevel::Info => tracing::Level::INFO,
+            LogLevel::Warn => tracing::Level::WARN,
+            LogLevel::Error => tracing::Level::ERROR,
+        }
+    }
+}
+
 #[derive(Deserialize)]
 pub struct Config {
     pub media_server: MediaServer,
@@ -36,6 +57,8 @@ pub struct Config {
     pub interval: u64,
     /// Logging directory
     pub log_dir: Option<PathBuf>,
+    /// Log level
+    pub log_level: Option<LogLevel>,
     /// Number of episodes to make available in advance
     pub prefetch_num: usize,
     /// Always request full seasons to prefer season packs
@@ -78,6 +101,7 @@ impl From<LegacyArgs> for Config {
             sonarr,
             interval,
             log_dir,
+            log_level: None,
             prefetch_num: remaining_episodes.into(),
             request_seasons: true,
             connection_retries,

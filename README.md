@@ -29,12 +29,12 @@ services:
     image: phueber/prefetcharr:latest
     container_name: prefetcharr
     environment:
-      - RUST_LOG=prefetcharr=debug
       - |
         PREFETCHARR_CONFIG=
        
         interval = 900           # Polling interval in seconds
         log_dir = "/log"         # Logging directory
+        log_level = "Debug"      # `Trace`, `Debug`, `Info`, `Warn` or `Error`
         prefetch_num = 2         # Number of episodes to make available in advance
         request_seasons = true   # Always request full seasons to prefer season packs
         connection_retries = 6   # Number of retries for the initial connection probing
