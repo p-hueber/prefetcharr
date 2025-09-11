@@ -141,11 +141,11 @@ impl ProvideNowPlaying for Client {
 }
 
 impl super::Client for Client {
-    fn now_playing(&self) -> BoxFuture<anyhow::Result<BoxStream<NowPlaying>>> {
+    fn now_playing(&self) -> BoxFuture<'_, anyhow::Result<BoxStream<'_, NowPlaying>>> {
         ProvideNowPlaying::now_playing(self)
     }
 
-    fn probe(&self) -> LocalBoxFuture<anyhow::Result<()>> {
+    fn probe(&self) -> LocalBoxFuture<'_, anyhow::Result<()>> {
         async {
             self.get::<Value>("status/sessions").await?;
             Ok(())

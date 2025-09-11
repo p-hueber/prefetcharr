@@ -46,7 +46,7 @@ pub trait ProvideNowPlaying {
         session: Self::Session,
     ) -> impl std::future::Future<Output = anyhow::Result<NowPlaying>> + Send;
 
-    fn now_playing(&self) -> BoxFuture<anyhow::Result<BoxStream<NowPlaying>>>
+    fn now_playing(&self) -> BoxFuture<'_, anyhow::Result<BoxStream<'_, NowPlaying>>>
     where
         <Self as ProvideNowPlaying>::Session: std::marker::Send,
         Self: Sync,
@@ -64,12 +64,12 @@ pub trait ProvideNowPlaying {
 }
 
 pub trait Client {
-    fn now_playing(&self) -> BoxFuture<anyhow::Result<BoxStream<NowPlaying>>>;
+    fn now_playing(&self) -> BoxFuture<'_, anyhow::Result<BoxStream<'_, NowPlaying>>>;
 
     fn now_playing_updates(
         &self,
         interval: Duration,
-    ) -> LocalBoxStream<anyhow::Result<NowPlaying>> {
+    ) -> LocalBoxStream<'_, anyhow::Result<NowPlaying>> {
         let mut interval = tokio::time::interval(interval);
         interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -86,9 +86,9 @@ pub trait Client {
         .boxed_local()
     }
 
-    fn probe(&self) -> LocalBoxFuture<anyhow::Result<()>>;
+    fn probe(&self) -> LocalBoxFuture<'_, anyhow::Result<()>>;
 
-    fn probe_with_retry(&self, retries: usize) -> LocalBoxFuture<anyhow::Result<()>> {
+    fn probe_with_retry(&self, retries: usize) -> LocalBoxFuture<'_, anyhow::Result<()>> {
         util::retry(retries, || self.probe()).boxed_local()
     }
 }
@@ -169,11 +169,11 @@ pub mod test {
     }
 
     impl Client for Mock {
-        fn now_playing(&self) -> BoxFuture<anyhow::Result<BoxStream<NowPlaying>>> {
+        fn now_playing(&self) -> BoxFuture<'_, anyhow::Result<BoxStream<'_, NowPlaying>>> {
             ProvideNowPlaying::now_playing(self)
         }
 
-        fn probe(&self) -> LocalBoxFuture<anyhow::Result<()>> {
+        fn probe(&self) -> LocalBoxFuture<'_, anyhow::Result<()>> {
             unimplemented!()
         }
     }
