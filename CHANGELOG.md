@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Log level configurable via TOML instead of RUST_LOG variable.
 
+## Fixed
+
+- Correctly monitor seasons of mixed monitoring state. ([@jon4hz](https://github.com/jon4hz))
+
 
 ## [1.1.0] - 2025-08-05
 
