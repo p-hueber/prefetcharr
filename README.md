@@ -28,10 +28,9 @@ services:
   prefetcharr:
     image: phueber/prefetcharr:latest
     container_name: prefetcharr
+    # user: "1000:1000"        # Optional: run as the given UID:GID
     environment:
-      - |
-        PREFETCHARR_CONFIG=
-       
+      PREFETCHARR_CONFIG: |
         interval = 900           # Polling interval in seconds
         log_dir = "/log"         # Logging directory
         log_level = "Debug"      # `Trace`, `Debug`, `Info`, `Warn` or `Error`
@@ -51,16 +50,27 @@ services:
         api_key = "<YOUR KEY HERE>"       # Sonarr API key
 
     volumes:
-      - /path/to/log/dir:/log
+      - ./path/to/config/dir:/config
+      - ./path/to/log/dir:/log
 
 ```
+
+> If you enable the `user` option, ensure `/path/to/config/dir` and `/path/to/log/dir`
+> are owned by the specified UID/GID (e.g. `1000:1000`) so the container can read
+> and write.
+
+> If you prefer a config file instead of handling the multi-line environment
+> variable, create `config.toml` inside the host directory you mount to `/config`.
 
 ## Configuration
 
 The configuration is written in [TOML][toml] format. When running `prefetcharr`
 directly, you can pass the path of the configuration file using the `--config`
-command-line flag. For the Docker container, provide the entire configuration
-via the `PREFETCHARR_CONFIG` environment variable.
+command-line flag. For the Docker container, you can either provide
+the entire configuration via the `PREFETCHARR_CONFIG` environment variable or create
+`config.toml` within the host directory that is mounted to `/config`.
+When both are present, the environment variable contents take precedence over
+the file.
 A complete example can be found in the installation instructions for
 `docker-compose` above. 
 
@@ -118,6 +128,9 @@ Once the container is running, you may want to check the logs for errors. You
 can do so by either calling `docker logs prefetcharr` or by checking the logging
 directory you configured.
 
+If you enable the `user` option to run as a non-root user (e.g. `user:
+"1000:1000"`), make sure the host directories mounted to `/config` and `/log`
+have matching ownership and permissions as the specified UID/GID.
 
 [sonarr]: <https://sonarr.tv>
 [jellyfin]: <https://jellyfin.org>
