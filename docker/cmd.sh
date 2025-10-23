@@ -12,8 +12,8 @@ test ! -f /config/config.toml && test -z "${PREFETCHARR_CONFIG}" && exec /prefet
   --log-dir "${LOG_DIR}" \
   --interval "${INTERVAL:-900}" \
   --remaining-episodes "${REMAINING_EPISODES:-2}" \
-  --users "${USERS:---users}" \
-  --libraries "${LIBRARIES:---libraries}" \
+  ${USERS:+--users "${USERS}"} \
+  ${LIBRARIES:+--libraries "${LIBRARIES}"} \
   --connection-retries 6 && exit
 
 # $PREFETCHARR_CONFIG takes precedence over a pre-existing config file
