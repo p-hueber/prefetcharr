@@ -14,7 +14,7 @@ test ! -f /config/config.toml && test -z "${PREFETCHARR_CONFIG}" && exec /prefet
   --remaining-episodes "${REMAINING_EPISODES:-2}" \
   --users "${USERS:---users}" \
   --libraries "${LIBRARIES:---libraries}" \
-  --connection-retries 6 
+  --connection-retries 6 && exit
 
 # $PREFETCHARR_CONFIG takes precedence over a pre-existing config file
 test -n "${PREFETCHARR_CONFIG}" && sh -c 'cat > /config/config.toml <<EOF
