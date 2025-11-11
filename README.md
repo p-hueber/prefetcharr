@@ -40,9 +40,9 @@ services:
         connection_retries = 6   # Number of retries for the initial connection probing
 
         [media_server]
-        type = "Jellyfin"                       # `Jellyfin`, `Emby` or `Plex`
-        url = "http://example.com/jellyfin"     # Jellyfin/Emby/Plex baseurl
-        api_key = "<YOUR KEY HERE>"             # Jellyfin/Emby API key or plex server token
+        type = "Jellyfin"                       # `Jellyfin`, `Emby`, `Plex` or `Tautulli`
+        url = "http://example.com/jellyfin"     # Jellyfin/Emby/Plex/Tautulli baseurl
+        api_key = "<YOUR KEY HERE>"             # Jellyfin/Emby/Tautulli API key or plex server token
         # users = [ "John", "12345", "Axel F" ] # Optional: Only monitor sessions for specific user IDs or names
         # libraries = [ "TV Shows", "Anime" ]   # Optional: Only monitor sessions for specific libraries
 
@@ -91,6 +91,11 @@ Log in as an administrator, click on the gear on the top right and go to
 You need to [extract the server token][plex-token] from a configuration file and
 use it as the API key.
 
+#### Plex via Tautulli
+
+Log in and go to `Settings` -> `Web Interface` -> API. Copy the key and make sure `Enable API` is ticked.
+
+
 ### Upgrading pilots
 
 If you want to store pilot episodes only, _prefetcharr_ can fetch the first
@@ -123,6 +128,7 @@ directory you configured.
 [jellyfin]: <https://jellyfin.org>
 [emby]: <https://emby.media>
 [plex]: <https://www.plex.tv>
+[tautulli]: <https://tautulli.com/>
 [rust]: <https://www.rust-lang.org/tools/install>
 [toml]: <https://toml.io/en/>
 [plex-token]: <https://www.plexopedia.com/plex-media-server/general/plex-token/#plexservertoken>
