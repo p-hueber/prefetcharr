@@ -78,7 +78,9 @@ impl TryFrom<MediaServer> for Fork {
         match value {
             MediaServer::Jellyfin => Ok(Self::Jellyfin),
             MediaServer::Emby => Ok(Self::Emby),
-            MediaServer::Plex => Err(anyhow!("media server is neither Emby nor Jellyfin")),
+            MediaServer::Plex | MediaServer::Tautulli => {
+                Err(anyhow!("media server is neither Emby nor Jellyfin"))
+            }
         }
     }
 }

@@ -46,10 +46,10 @@ struct LegacyArgs {
     /// Media server type
     #[arg(long, default_value = "jellyfin")]
     media_server_type: MediaServer,
-    /// Jellyfin/Emby/Plex baseurl
+    /// Jellyfin/Emby/Plex/Tautulli baseurl
     #[arg(long, value_name = "URL")]
     media_server_url: String,
-    /// Jellyfin/Emby API key or Plex server token
+    /// Jellyfin/Emby/Tautulli API key or Plex server token
     #[arg(long, value_name = "API_KEY", env = "MEDIA_SERVER_API_KEY")]
     media_server_api_key: String,
     /// Sonarr baseurl
@@ -85,6 +85,7 @@ enum MediaServer {
     Jellyfin,
     Emby,
     Plex,
+    Tautulli,
 }
 
 impl Display for MediaServer {
@@ -93,6 +94,7 @@ impl Display for MediaServer {
             MediaServer::Jellyfin => "Jellyfin",
             MediaServer::Emby => "Emby",
             MediaServer::Plex => "Plex",
+            MediaServer::Tautulli => "Tautulli",
         };
         f.write_str(name)
     }
@@ -164,6 +166,14 @@ async fn run(config: Config) -> anyhow::Result<()> {
         MediaServer::Plex => {
             let client = plex::Client::new(&config.media_server.url, &config.media_server.api_key)
                 .context("Invalid connection parameters")?;
+            Box::new(client)
+        }
+        MediaServer::Tautulli => {
+            let client = media_server::tautulli::Client::new(
+                &config.media_server.url,
+                &config.media_server.api_key,
+            )
+            .context("Invalid connection parameters")?;
             Box::new(client)
         }
     };
