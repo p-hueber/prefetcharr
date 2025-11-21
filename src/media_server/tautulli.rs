@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use futures::{
     FutureExt,
     future::{BoxFuture, LocalBoxFuture},
@@ -6,15 +6,16 @@ use futures::{
 };
 use reqwest::header::{HeaderMap, HeaderValue};
 use rustls_platform_verifier::ConfigVerifierExt;
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::{Deserialize, Deserializer, de, de::DeserializeOwned};
 use serde_json::Value;
+use tracing::warn;
 
 use super::{NowPlaying, ProvideNowPlaying};
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct User {
     #[serde(rename = "user_id")]
-    id: String,
+    id: i32,
     #[serde(rename = "username")]
     name: String,
 }
@@ -23,8 +24,25 @@ impl From<User> for super::User {
     fn from(value: User) -> Self {
         Self {
             name: value.name,
-            id: value.id,
+            id: value.id.to_string(),
         }
+    }
+}
+
+fn i32_from_string<'de, D>(deserializer: D) -> Result<i32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrInt {
+        String(String),
+        Int(i32),
+    }
+
+    match StringOrInt::deserialize(deserializer)? {
+        StringOrInt::String(s) => s.parse::<i32>().map_err(de::Error::custom),
+        StringOrInt::Int(i) => Ok(i),
     }
 }
 
@@ -32,7 +50,9 @@ impl From<User> for super::User {
 pub struct Episode {
     grandparent_title: String,
     grandparent_guids: Vec<String>,
+    #[serde(deserialize_with = "i32_from_string")]
     media_index: i32,
+    #[serde(deserialize_with = "i32_from_string")]
     parent_media_index: i32,
     media_type: String,
     #[serde(flatten)]
@@ -89,20 +109,30 @@ impl ProvideNowPlaying for Client {
     async fn sessions(&self) -> anyhow::Result<Vec<Self::Session>> {
         let obj: serde_json::Map<String, Value> = self.get("get_activity").await?;
 
-        Ok(obj
+        let data = obj
             .get("response")
-            .and_then(|v| v.get("data"))
-            .and_then(|v| v.get("sessions"))
-            .and_then(Value::as_array)
-            .map(|sessions| {
-                sessions
-                    .iter()
-                    .cloned()
-                    .map(serde_json::value::from_value)
-                    .filter_map(Result::ok)
-                    .collect::<Vec<Self::Session>>()
+            .context("Tautulli response missing `response` field")?
+            .get("data")
+            .context("Tautulli response missing `data` field")?;
+
+        let sessions = match data.get("sessions") {
+            Some(sessions) => sessions
+                .as_array()
+                .context("Tautulli `sessions` field is not an array")?,
+            None => return Ok(Vec::new()),
+        };
+
+        Ok(sessions
+            .iter()
+            .cloned()
+            .map(serde_json::value::from_value)
+            .inspect(|r| {
+                if let Err(e) = r {
+                    warn!(error = ?e, "Skipping Tautulli session due to deserialization error");
+                }
             })
-            .unwrap_or_default())
+            .filter_map(Result::ok)
+            .collect())
     }
 
     async fn extract(&self, session: Self::Session) -> anyhow::Result<NowPlaying> {
@@ -166,10 +196,10 @@ mod test {
                         "sessions": [{
                             "grandparent_title": "Test Show",
                             "grandparent_guids": ["tvdb://1234"],
-                            "media_index": 5,
-                            "parent_media_index": 3,
+                            "media_index": "5",
+                            "parent_media_index": "3",
                             "media_type": "episode",
-                            "user_id": "29344801",
+                            "user_id": 29_344_801,
                             "username": "user",
                             "library_name": "TV Shows"
                         }]
@@ -257,7 +287,7 @@ mod test {
             media_type: "episode".into(),
             user: tautulli::User {
                 name: "user".into(),
-                id: "29344801".into(),
+                id: 29_344_801,
             },
             library_name: "TV Shows".into(),
         };
@@ -321,10 +351,10 @@ mod test {
                                     {
                                         "grandparent_title": "Test Show",
                                         "grandparent_guids": ["tvdb://1234"],
-                                        "media_index": 5,
-                                        "parent_media_index": 3,
+                                        "media_index": "5",
+                                        "parent_media_index": "3",
                                         "media_type": "episode",
-                                        "user_id": "29344801",
+                                        "user_id": 29344801,
                                         "user_thumbnail": "ignore",
                                         "username": "user",
                                         "library_name": "TV Shows"
@@ -371,10 +401,10 @@ mod test {
                                 "sessions": [{
                                     "grandparent_title": "Test Show",
                                     "grandparent_guids": ["invalid"],
-                                    "media_index": 5,
-                                    "parent_media_index": 3,
+                                    "media_index": "5",
+                                    "parent_media_index": "3",
                                     "media_type": "episode",
-                                    "user_id": "29344801",
+                                    "user_id": 29344801,
                                     "username": "user",
                                     "library_name": "TV Shows"
                                 }]
