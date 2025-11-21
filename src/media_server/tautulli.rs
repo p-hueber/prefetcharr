@@ -187,7 +187,7 @@ mod test {
         Client, NowPlaying, ProvideNowPlaying, Series, tautulli, tautulli::Episode,
         test::np_default,
     };
-
+    #[allow(clippy::unreadable_literal)]
     fn episode() -> serde_json::Value {
         serde_json::json!(
             {
@@ -199,7 +199,7 @@ mod test {
                             "media_index": "5",
                             "parent_media_index": "3",
                             "media_type": "episode",
-                            "user_id": 29_344_801,
+                            "user_id": 29344801,
                             "username": "user",
                             "library_name": "TV Shows"
                         }]
@@ -279,6 +279,7 @@ mod test {
 
         assert_eq!(sessions.len(), 1);
 
+        #[allow(clippy::unreadable_literal)]
         let session_expect = Episode {
             grandparent_title: "Test Show".into(),
             grandparent_guids: vec!["tvdb://1234".into()],
@@ -287,7 +288,7 @@ mod test {
             media_type: "episode".into(),
             user: tautulli::User {
                 name: "user".into(),
-                id: 29_344_801,
+                id: 29344801,
             },
             library_name: "TV Shows".into(),
         };
@@ -336,6 +337,7 @@ mod test {
         let sessions_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v2");
+                #[allow(clippy::unreadable_literal)]
                 then.json_body(serde_json::json!(
                     {
                         "response": {
@@ -394,6 +396,7 @@ mod test {
         let sessions_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v2");
+                #[allow(clippy::unreadable_literal)]
                 then.json_body(serde_json::json!(
                       {
                         "response": {
