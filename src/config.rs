@@ -26,6 +26,8 @@ pub struct Sonarr {
     pub url: String,
     /// Sonarr API key
     pub api_key: String,
+    /// Exclude series by tag
+    pub exclude_tag: Option<String>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -95,6 +97,7 @@ impl From<LegacyArgs> for Config {
         let sonarr = Sonarr {
             url: sonarr_url,
             api_key: sonarr_api_key,
+            exclude_tag: None,
         };
         Config {
             media_server,

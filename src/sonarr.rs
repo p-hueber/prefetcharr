@@ -6,7 +6,13 @@ use reqwest::{
 use rustls_platform_verifier::ConfigVerifierExt;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
+
+#[derive(Debug)]
+pub enum Tag {
+    Label(String),
+    Id(i32),
+}
 
 #[derive(Clone)]
 pub struct Client {
@@ -83,22 +89,60 @@ impl Client {
         Ok(response.json().await?)
     }
 
+    #[instrument(skip_all)]
     pub async fn series(&self) -> Result<Vec<SeriesResource>> {
         let series = self
             .get::<Value, ()>("series", None)
             .await?
             .as_array()
-            .ok_or_else(|| anyhow!("not an array"))?
+            .context("not an array")?
             .iter()
-            .filter_map(|s| match serde_json::from_value(s.clone()) {
-                Ok(v) => Some(v),
-                Err(e) => {
-                    debug!(series=?s, "ignoring malformed series entry: {e}");
-                    None
-                }
+            .filter_map(|s| {
+                serde_json::from_value(s.clone())
+                    .inspect_err(|e| debug!(series=?s, "ignoring malformed series entry: {e}"))
+                    .ok()
             })
             .collect::<Vec<SeriesResource>>();
         Ok(series)
+    }
+
+    #[instrument(skip_all)]
+    async fn tags(&self) -> Result<Vec<TagResource>> {
+        let tags = self
+            .get::<Value, ()>("tag", None)
+            .await?
+            .as_array()
+            .context("not an array")?
+            .iter()
+            .filter_map(|t| {
+                serde_json::from_value(t.clone())
+                    .inspect_err(|e| debug!(tags=?t, "ignoring malformed tags entry: {e}"))
+                    .ok()
+            })
+            .collect::<Vec<_>>();
+        Ok(tags)
+    }
+
+    #[instrument(skip(self))]
+    pub async fn resolve_tag(&self, label: &str) -> Result<i32> {
+        self.tags()
+            .await
+            .context("retrieving tags")?
+            .into_iter()
+            .find_map(|t| (t.label.as_deref() == Some(label)).then_some(t.id))
+            .context("tag not known")
+    }
+
+    #[instrument(skip(self))]
+    pub async fn update_tag(&self, tag: &mut Tag) {
+        let Tag::Label(label) = tag else { return };
+        match self.resolve_tag(label).await {
+            Ok(id) => *tag = Tag::Id(id),
+            Err(err) => {
+                // Not a hard error as the tag may be added to Sonarr later.
+                warn!(tag=%label, "cannot resolve tag ID: {err:#}");
+            }
+        }
     }
 
     pub async fn monitor_episodes(
@@ -171,7 +215,7 @@ impl Client {
         let mut series = series.clone();
         let season = series
             .season_mut(season_num)
-            .ok_or_else(|| anyhow!("there is no season {season_num}"))?;
+            .with_context(|| format!("there is no season {season_num}"))?;
 
         if season.monitored {
             // Ensure all episodes in the season are monitored
@@ -219,6 +263,12 @@ impl Client {
             .error_for_status()?;
 
         Ok(response.json().await?)
+    }
+}
+
+impl From<String> for Tag {
+    fn from(label: String) -> Self {
+        Tag::Label(label)
     }
 }
 
@@ -307,8 +357,17 @@ pub struct SeriesResource {
     // optional for v3 compatibility
     pub monitor_new_items: Option<NewItemMonitorTypes>,
     pub seasons: Vec<SeasonResource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Vec<i32>>,
     #[serde(flatten)]
     other: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagResource {
+    pub id: i32,
+    pub label: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -333,16 +392,21 @@ impl SeriesResource {
         }
         changed
     }
+
+    pub fn is_tagged_with(&self, tag: &Tag) -> Option<bool> {
+        let Tag::Id(id) = tag else { return None };
+        Some(self.tags.as_ref()?.contains(id))
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use httpmock::Method::{POST, PUT};
+    use httpmock::Method::{GET, POST, PUT};
     use serde_json::{Value, json};
 
     use crate::sonarr::{
         EpisodeResource, NewItemMonitorTypes, SeasonResource, SeasonStatisticsResource,
-        SeriesResource,
+        SeriesResource, Tag,
     };
 
     #[tokio::test]
@@ -523,6 +587,7 @@ mod test {
             monitored: false,
             monitor_new_items: Some(NewItemMonitorTypes::All),
             seasons: vec![],
+            tags: Some(vec![1]),
             other: Value::Null,
         };
 
@@ -537,7 +602,8 @@ mod test {
                             "tvdbId": 5678,
                             "monitored": false,
                             "monitorNewItems": "all",
-                            "seasons": []
+                            "seasons": [],
+                            "tags": [1]
                         }
                     ));
                 then.json_body(json!({}));
@@ -577,6 +643,7 @@ mod test {
             monitored: false,
             monitor_new_items: Some(NewItemMonitorTypes::All),
             seasons: vec![season],
+            tags: None,
             other: serde_json::json!({}),
         };
 
@@ -731,6 +798,136 @@ mod test {
 
         assert_eq!(res[1].episode_number, 2);
         assert_eq!(res[1].season_number, 2);
+    }
+
+    #[test]
+    fn series_match_tag() {
+        let series: SeriesResource = serde_json::from_value(serde_json::json!(
+            {
+                "id": 1234,
+                "title": "TestShow",
+                "tvdbId": 5678,
+                "monitored": false,
+                "monitorNewItems": "all",
+                "seasons": [],
+                "tags": [1, 2]
+            }
+        ))
+        .unwrap();
+        assert!(series.is_tagged_with(&crate::sonarr::Tag::Id(1)).unwrap());
+        assert!(series.is_tagged_with(&crate::sonarr::Tag::Id(2)).unwrap());
+        assert!(!series.is_tagged_with(&crate::sonarr::Tag::Id(3)).unwrap());
+        assert!(
+            series
+                .is_tagged_with(&crate::sonarr::Tag::Label(String::from("1")))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn series_no_tag() {
+        let series: SeriesResource = serde_json::from_value(serde_json::json!(
+            {
+                "id": 1234,
+                "title": "TestShow",
+                "tvdbId": 5678,
+                "monitored": false,
+                "monitorNewItems": "all",
+                "seasons": []
+            }
+        ))
+        .unwrap();
+        assert!(series.is_tagged_with(&crate::sonarr::Tag::Id(1)).is_none());
+        assert!(
+            series
+                .is_tagged_with(&crate::sonarr::Tag::Label(String::from("1")))
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn update_tag() -> anyhow::Result<()> {
+        let server = httpmock::MockServer::start_async().await;
+        let tags_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/tag").method(GET);
+                then.json_body(json!(
+                    [ { "id": 1, "label": "tag1" } ]
+                ));
+            })
+            .await;
+
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
+
+        {
+            let mut tag = Tag::from(String::from("tag1"));
+            client.update_tag(&mut tag).await;
+            assert!(matches!(tag, Tag::Id(1)));
+        }
+
+        {
+            let mut tag = Tag::from(String::from("tag2"));
+            client.update_tag(&mut tag).await;
+            assert!(matches!(tag, Tag::Label(_)));
+        }
+
+        {
+            let mut tag = Tag::Id(1);
+            client.update_tag(&mut tag).await;
+            assert!(matches!(tag, Tag::Id(1)));
+        }
+
+        tags_mock.assert_hits_async(2).await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_tag_no_label() -> anyhow::Result<()> {
+        let server = httpmock::MockServer::start_async().await;
+        let tags_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/tag").method(GET);
+                then.json_body(json!(
+                    [ { "id": 1 } ]
+                ));
+            })
+            .await;
+
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
+
+        {
+            let mut tag = Tag::from(String::from("tag1"));
+            client.update_tag(&mut tag).await;
+            assert!(matches!(tag, Tag::Label(_)));
+        }
+
+        tags_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn update_tag_no_tags() -> anyhow::Result<()> {
+        let server = httpmock::MockServer::start_async().await;
+        let tags_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/tag").method(GET);
+                then.json_body(json!([]));
+            })
+            .await;
+
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
+
+        {
+            let mut tag = Tag::from(String::from("tag1"));
+            client.update_tag(&mut tag).await;
+            assert!(matches!(tag, Tag::Label(_)));
+        }
+
+        tags_mock.assert_async().await;
+
+        Ok(())
     }
 
     fn default_episode() -> EpisodeResource {

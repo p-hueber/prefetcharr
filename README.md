@@ -49,6 +49,7 @@ services:
         [sonarr]
         url = "http://example.com/sonarr" # Sonarr baseurl
         api_key = "<YOUR KEY HERE>"       # Sonarr API key
+        # exclude_tag = "no_prefetch"     # Optional: Exclude series by tag
 
     volumes:
       - /path/to/log/dir:/log
@@ -93,7 +94,8 @@ use it as the API key.
 
 #### Plex via Tautulli
 
-Log in and go to `Settings` -> `Web Interface` -> API. Copy the key and make sure `Enable API` is ticked.
+Log in and go to `Settings` -> `Web Interface` -> API. Copy the key and make
+sure `Enable API` is ticked.
 
 
 ### Upgrading pilots

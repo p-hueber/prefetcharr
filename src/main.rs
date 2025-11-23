@@ -198,6 +198,7 @@ async fn run(config: Config) -> anyhow::Result<()> {
         seen,
         config.prefetch_num,
         config.request_seasons,
+        config.sonarr.exclude_tag,
     );
 
     let _ = tokio::join!(np_updates, actor.process());

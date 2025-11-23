@@ -17,6 +17,7 @@ pub struct Actor {
     seen: Seen,
     prefetch_num: usize,
     request_seasons: bool,
+    exclude_tag: Option<sonarr::Tag>,
 }
 
 impl Actor {
@@ -26,13 +27,16 @@ impl Actor {
         seen: Seen,
         prefetch_num: usize,
         request_seasons: bool,
+        exclude_tag: Option<String>,
     ) -> Self {
+        let exclude_tag = exclude_tag.map(sonarr::Tag::from);
         Self {
             rx,
             sonarr_client,
             seen,
             prefetch_num,
             request_seasons,
+            exclude_tag,
         }
     }
 }
@@ -61,11 +65,21 @@ impl Actor {
 
         info!(title = series.title.clone().unwrap_or_else(|| "?".to_string()), now_playing = ?np);
 
+        // Resolve and match exclusion tag
+        if let Some(exclude_tag) = &mut self.exclude_tag {
+            self.sonarr_client.update_tag(exclude_tag).await;
+            if let Some(true) = series.is_tagged_with(exclude_tag) {
+                info!("excluded via tag");
+                return Ok(());
+            }
+        }
+
         // fetch n next episodes
         let episodes = self
             .sonarr_client
             .episodes(&series, np.season, np.episode, self.prefetch_num)
             .await?;
+
         // https://forums.sonarr.tv/t/season-monitor-toggle-option-that-doesnt-change-the-existing-episode-state/30098/9
         // monitor series
         let mut series_modified = !series.monitored;
@@ -218,7 +232,7 @@ mod test {
         let (tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, once::Seen::default(), 2, true)
+            super::Actor::new(rx, sonarr, once::Seen::default(), 2, true, None)
                 .process()
                 .await;
         });
@@ -305,7 +319,7 @@ mod test {
 
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, once::Seen::default(), 3, false)
+            super::Actor::new(rx, sonarr, once::Seen::default(), 3, false, None)
                 .process()
                 .await;
         });
@@ -391,7 +405,7 @@ mod test {
 
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, once::Seen::default(), 3, false)
+            super::Actor::new(rx, sonarr, once::Seen::default(), 3, false, None)
                 .process()
                 .await;
         });
@@ -535,7 +549,7 @@ mod test {
         let (tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, once::Seen::default(), 2, true)
+            super::Actor::new(rx, sonarr, once::Seen::default(), 2, true, None)
                 .process()
                 .await;
         });
@@ -617,7 +631,7 @@ mod test {
         let (tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
         tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, once::Seen::default(), 2, true)
+            super::Actor::new(rx, sonarr, once::Seen::default(), 2, true, None)
                 .process()
                 .await;
         });
