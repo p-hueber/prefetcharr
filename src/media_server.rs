@@ -12,6 +12,7 @@ use crate::util;
 
 pub mod embyfin;
 pub mod plex;
+pub mod tautulli;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Series {

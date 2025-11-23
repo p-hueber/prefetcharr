@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased 
 
+## Added
+
+- Add support for Tautulli as a way to connect to Plex
+
 ## [1.2.0] - 2025-09-11
 
 ## Added

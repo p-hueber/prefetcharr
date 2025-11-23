@@ -8,9 +8,9 @@ use crate::LegacyArgs;
 pub struct MediaServer {
     /// Media server type
     pub r#type: crate::MediaServer,
-    /// Jellyfin/Emby/Plex baseurl
+    /// Jellyfin/Emby/Plex/Tautulli baseurl
     pub url: String,
-    /// Jellyfin/Emby API key or Plex server token
+    /// Jellyfin/Emby/Tautulli API key or Plex server token
     pub api_key: String,
     /// User IDs or names to monitor episodes for (default: empty/all users)
     #[serde(default)]
