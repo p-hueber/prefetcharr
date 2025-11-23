@@ -31,6 +31,7 @@ services:
     environment:
       - |
         PREFETCHARR_CONFIG=
+        # Start of the configuration in TOML format.
        
         interval = 900           # Polling interval in seconds
         log_dir = "/log"         # Logging directory
@@ -53,6 +54,8 @@ services:
 
     volumes:
       - /path/to/log/dir:/log
+      # Keep the config in a file instead of PREFETCHARR_CONFIG
+      # - /path/to/config.toml:/config
 
 ```
 
@@ -63,7 +66,7 @@ directly, you can pass the path of the configuration file using the `--config`
 command-line flag. For the Docker container, provide the entire configuration
 via the `PREFETCHARR_CONFIG` environment variable.
 A complete example can be found in the installation instructions for
-`docker-compose` above. 
+`docker-compose` above.
 
 ### API keys
 
