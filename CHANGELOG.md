@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased 
 
+
+## [1.3.0] - 2025-11-25
+
 ### Added
 
-- Add support for Tautulli as a way to connect to Plex.
+- Add support for Tautulli as a way to connect to Plex. ([@daniel-tp](https://github.com/daniel-tp))
 - New config option `exclude_tag` to ignore series by Sonarr tag.
 
 ### Changed
