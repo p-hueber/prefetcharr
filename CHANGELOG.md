@@ -7,64 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased 
 
-## Added
+### Added
 
 - Add support for Tautulli as a way to connect to Plex.
 - New config option `exclude_tag` to ignore series by Sonarr tag.
 
-## Changed
+### Changed
 
 - Docker: No need to set `PREFETCHARR_CONFIG` when providing config as file.
 
 
 ## [1.2.0] - 2025-09-11
 
-## Added
+### Added
 
 - Log level configurable via TOML instead of RUST_LOG variable.
 
-## Fixed
+### Fixed
 
 - Correctly monitor seasons of mixed monitoring state. ([@jon4hz](https://github.com/jon4hz))
 
 
 ## [1.1.0] - 2025-08-05
 
-## Added
+### Added
 
 - `request_seasons` can be set to `false` to request single episodes.
 
-## Changed
+### Changed
 
 - Configuration is done through a TOML file instead of environment variables and
   CLI parameters. This change is backwards compatible.
 
-## Removed
+### Removed
 
 - Unmaintained Unraid instructions and template.
 
 
 ## [1.0.0] - 2025-03-18
 
-## Removed
+### Removed
 
 - Remove deprecated `--jellyfin-url` and `JELLYFIN_API_KEY` options.
 
 
 ## [0.10.0] - 2025-02-16
 
-## Added
+### Added
 
 - Optional allow list for media server libraries. 
 
-## Changed
+### Changed
 
 - TLS root certificates are no longer compiled in but provided by the platform.
   
 
 ## [0.9.0] - 2025-01-04
 
-## Added
+### Added
 
 - Add an optional setting to retry the initial connection probing. This is
   always set by the Dockerfile.
@@ -72,19 +72,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.2] - 2024-12-01
 
-## Fixed
+### Fixed
 
 - Use the correct episode count from Sonarr to not consider monitored episodes
   as downloaded.
 
-## Added
+### Added
 
 - Add a Docker template for Unraid. ([@f0rc3d](https://github.com/f0rc3d))
 
 
 ## [0.8.1] - 2024-10-31
 
-## Fixed
+### Fixed
 
 - Plex sessions were not detected since 0.8.0.
 
