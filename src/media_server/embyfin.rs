@@ -593,7 +593,10 @@ mod test {
 
         let start = Instant::now();
         let _ = np_updates.next().await;
-        assert!(Instant::now().duration_since(start) >= Duration::from_millis(100) - tolerance);
+        assert!(
+            Instant::now().duration_since(start)
+                >= Duration::from_millis(100).checked_sub(tolerance).unwrap()
+        );
 
         Ok(())
     }
