@@ -181,6 +181,11 @@ impl Client {
         episode_start: i32,
         num: usize,
     ) -> Result<Vec<EpisodeResource>> {
+        // Season 0 contains specials without any particular order.
+        if season_start == 0 {
+            return Ok(Vec::new());
+        }
+
         let episodes = self
             .get::<Vec<EpisodeResource>, _>("episode", Some(&[("seriesId", series.id)]))
             .await

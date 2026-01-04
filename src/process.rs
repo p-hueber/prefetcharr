@@ -367,7 +367,7 @@ mod test {
             .mock_async(|when, then| {
                 let mut series_monitored = series_unmonitored()[0].clone();
                 series_monitored["monitored"] = true.into();
-                series_monitored["seasons"][1]["monitored"] = true.into();
+                series_monitored["seasons"][2]["monitored"] = true.into();
                 series_monitored["monitorNewItems"] = "all".into();
                 when.path("/pathprefix/api/v3/series/1234")
                     .method(PUT)
@@ -438,6 +438,15 @@ mod test {
                 "monitored": false,
                 "monitorNewItems": "all",
                 "seasons": [{
+                    "seasonNumber": 0,
+                    "monitored": false,
+                    "statistics": {
+                        "sizeOnDisk": 9000,
+                        "episodeCount": 8,
+                        "episodeFileCount": 8,
+                        "totalEpisodeCount": 8,
+                    }
+                },{
                     "seasonNumber": 1,
                     "monitored": false,
                     "statistics": {
@@ -468,6 +477,15 @@ mod test {
             "monitored": true,
             "monitorNewItems": "all",
             "seasons": [{
+                "seasonNumber": 0,
+                "monitored": false,
+                "statistics": {
+                    "sizeOnDisk": 9000,
+                    "episodeCount": 8,
+                    "episodeFileCount": 8,
+                    "totalEpisodeCount": 8,
+                }
+            },{
                 "seasonNumber": 1,
                 "monitored": true,
                 "statistics": {
@@ -507,6 +525,7 @@ mod test {
     }
 
     #[tokio::test]
+    #[test_log::test]
     async fn monitor() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
 
@@ -595,7 +614,8 @@ mod test {
         let put_series_mock = server
             .mock_async(|when, then| {
                 let mut series_monitored = series_monitored();
-                series_monitored["seasons"][1]["monitored"] = serde_json::Value::Bool(false);
+                series_monitored["seasons"][0]["monitored"] = serde_json::Value::Bool(false);
+                series_monitored["seasons"][2]["monitored"] = serde_json::Value::Bool(false);
                 when.path("/pathprefix/api/v3/series/1234")
                     .method(PUT)
                     .json_body(series_monitored);
@@ -651,6 +671,41 @@ mod test {
         put_series_mock.assert_async().await;
         monitor_episodes_mock.assert_async().await;
         command_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn special_episode() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series");
+                then.json_body(series_unmonitored());
+            })
+            .await;
+
+        let (tx, rx) = mpsc::channel(1);
+        let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
+        tokio::spawn(async move {
+            super::Actor::new(rx, sonarr, once::Seen::default(), 2, true, None)
+                .process()
+                .await;
+        });
+
+        tx.send(Message::NowPlaying(NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 1,
+            season: 0,
+            ..np_default()
+        }))
+        .await?;
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        series_mock.assert_async().await;
 
         Ok(())
     }
