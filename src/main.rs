@@ -9,7 +9,7 @@ use std::{
 };
 
 use anyhow::Context;
-use clap::{Parser, ValueEnum, arg, command};
+use clap::{Parser, ValueEnum};
 use config::Config;
 use futures::{StreamExt as _, TryStreamExt};
 use serde::Deserialize;
