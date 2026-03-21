@@ -248,7 +248,7 @@ mod test {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         series_mock.assert_async().await;
-        episodes_mock.assert_hits_async(3).await;
+        episodes_mock.assert_calls_async(3).await;
         put_series_mock.assert_async().await;
         monitor_episodes_mock_1.assert_async().await;
         monitor_episodes_mock_2.assert_async().await;
@@ -584,7 +584,7 @@ mod test {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         series_mock.assert_async().await;
-        episodes_mock.assert_hits_async(3).await;
+        episodes_mock.assert_calls_async(3).await;
         put_series_mock.assert_async().await;
         monitor_episodes_mock.assert_async().await;
 
@@ -667,7 +667,7 @@ mod test {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         series_mock.assert_async().await;
-        episodes_mock.assert_hits_async(2).await;
+        episodes_mock.assert_calls_async(2).await;
         put_series_mock.assert_async().await;
         monitor_episodes_mock.assert_async().await;
         command_mock.assert_async().await;

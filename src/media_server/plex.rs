@@ -355,7 +355,7 @@ mod test {
         assert_eq!(message, Some(message_expect));
 
         sessions_mock.assert_async().await;
-        series_mock.assert_hits_async(0).await;
+        series_mock.assert_calls_async(0).await;
 
         Ok(())
     }
