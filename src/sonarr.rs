@@ -882,7 +882,7 @@ mod test {
             assert!(matches!(tag, Tag::Id(1)));
         }
 
-        tags_mock.assert_hits_async(2).await;
+        tags_mock.assert_calls_async(2).await;
 
         Ok(())
     }
