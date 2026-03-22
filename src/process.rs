@@ -108,6 +108,7 @@ impl Actor {
                 .collect::<Vec<_>>();
             season_numbers.sort_unstable();
 
+            let mut error = false;
             for season_num in season_numbers {
                 if let Err(err) = self
                     .sonarr_client
@@ -115,6 +116,11 @@ impl Actor {
                     .await
                 {
                     error!("skip searching for season {season_num}: {err:#}");
+                    error = true;
+                }
+
+                if error {
+                    return Err(anyhow!("failed searching one or more seasons"));
                 }
             }
         } else {
@@ -682,6 +688,96 @@ mod test {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         series_mock.assert_async().await;
+        handle.await.unwrap().unwrap();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    // If we search for a season and it is already monitored, we must monitor all episodes manually.
+    async fn monitor_episodes_of_monitored_season() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                let mut series = series_unmonitored();
+                series[0]["seasons"][1]["monitored"] = serde_json::Value::Bool(true);
+                when.path("/pathprefix/api/v3/series");
+                then.json_body(series);
+            })
+            .await;
+
+        let episodes_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode")
+                    .query_param("seriesId", "1234")
+                    .query_param_count(".*", ".*", 1);
+                then.json_body(episodes());
+            })
+            .await;
+
+        let season_episodes_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode")
+                    .query_param("seriesId", "1234")
+                    .query_param("seasonNumber", "1")
+                    .query_param_count(".*", ".*", 2);
+                then.json_body(season_episodes(1));
+            })
+            .await;
+
+        let put_monitor_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode/monitor")
+                    .method(PUT)
+                    .json_body(serde_json::json!(
+                        {
+                          "episodeIds": [
+                            11, 12, 13, 14, 15, 16, 17, 18
+                          ],
+                          "monitored": true
+                        }
+                    ));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let command_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/command")
+                    .method(POST)
+                    .json_body(json!({
+                        "name": "SeasonSearch",
+                        "seriesId": 1234,
+                        "seasonNumber": 1,
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let (_tx, rx) = mpsc::channel(1);
+        let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
+        let np = NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 1,
+            season: 1,
+            ..np_default()
+        };
+        let handle = tokio::spawn(async move {
+            super::Actor::new(rx, sonarr, once::Seen::default(), 2, true, None)
+                .prefetch(np)
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        series_mock.assert_async().await;
+        episodes_mock.assert_async().await;
+        season_episodes_mock.assert_async().await;
+        put_monitor_mock.assert_async().await;
+        command_mock.assert_async().await;
+
         handle.await.unwrap().unwrap();
 
         Ok(())
