@@ -204,7 +204,29 @@ impl Client {
         Ok(())
     }
 
-    pub async fn episodes(
+    async fn episodes(&self, series: &SeriesResource) -> Result<Vec<EpisodeResource>> {
+        self.get("episode", Some(&[("seriesId", series.id)]))
+            .await
+            .context("error fetching episodes")
+    }
+
+    async fn episodes_season(
+        &self,
+        series: &SeriesResource,
+        season: &SeasonResource,
+    ) -> Result<Vec<EpisodeResource>> {
+        self.get(
+            "episode",
+            Some(&[
+                ("seriesId", series.id),
+                ("seasonNumber", season.season_number),
+            ]),
+        )
+        .await
+        .context("error fetching episodes")
+    }
+
+    pub async fn episode_range(
         &self,
         series: &SeriesResource,
         season_start: i32,
@@ -216,14 +238,37 @@ impl Client {
             return Ok(Vec::new());
         }
 
-        let episodes = self
-            .get::<Vec<EpisodeResource>, _>("episode", Some(&[("seriesId", series.id)]))
-            .await
-            .context("error fetching episodes")?;
-
+        let episodes = self.episodes(series).await?;
         let episodes = episode_window(season_start, episode_start, num, episodes);
 
         Ok(episodes)
+    }
+
+    // Make sure all newly announced episodes will be monitored.
+    // https://forums.sonarr.tv/t/season-monitor-toggle-option-that-doesnt-change-the-existing-episode-state/30098/9
+    pub async fn monitor_unannounced_episodes(&self, series: &mut SeriesResource) -> Result<()> {
+        // Make series eligible for monitoring checks
+        series.monitored = true;
+
+        // Monitor new seasons
+        series.monitor_new_items = Some(NewItemMonitorTypes::All);
+
+        // Monitor new episode announcements in last season
+        if let Some(last_season) = series.seasons.last_mut() {
+            last_season.monitored = true;
+        }
+
+        if let Some(last_season) = series.seasons.last() {
+            // Apply monitoring but restore episode state
+            let original_episodes = self.episodes_season(series, last_season).await?;
+            self.put_series(series).await?;
+            self.update_episode_monitoring(&original_episodes).await?;
+        } else {
+            // Apply monitoring
+            self.put_series(series).await?;
+        }
+
+        Ok(())
     }
 
     pub async fn search_episodes(&self, episodes: &[EpisodeResource]) -> Result<serde_json::Value> {
@@ -239,40 +284,31 @@ impl Client {
 
     pub async fn search_season(
         &self,
-        series: &SeriesResource,
+        series: &mut SeriesResource,
         season_num: i32,
     ) -> Result<serde_json::Value> {
         info!(num = season_num, "Searching season");
 
-        let series_monitored = series.monitored;
-        let series_id = series.id;
-
-        let mut series = series.clone();
         let season = series
-            .season_mut(season_num)
+            .season(season_num)
             .with_context(|| format!("there is no season {season_num}"))?;
 
         if season.monitored {
             // Ensure all episodes in the season are monitored
-            let season_episodes = self
-                .get::<Vec<EpisodeResource>, _>("episode", Some(&[("seriesId", series_id)]))
-                .await?
-                .into_iter()
-                .filter_map(|mut e| {
-                    e.monitored = true;
-                    (e.season_number == season_num).then_some(e)
-                })
-                .collect::<Vec<_>>();
-
-            if !season_episodes.is_empty() {
-                self.update_episode_monitoring(&season_episodes).await?;
+            let mut season_episodes = self.episodes_season(series, season).await?;
+            for e in &mut season_episodes {
+                e.monitored = true;
             }
+            self.update_episode_monitoring(&season_episodes).await?;
         }
 
-        if !season.monitored || !series_monitored {
+        if !season.monitored || !series.monitored {
+            let season = series
+                .season_mut(season_num)
+                .with_context(|| format!("there is no season {season_num}"))?;
             season.monitored = true;
             series.monitored = true;
-            self.put_series(&series).await?;
+            self.put_series(series).await?;
         }
 
         let cmd = json!({
@@ -420,15 +456,8 @@ impl SeriesResource {
         self.seasons.iter_mut().find(|s| s.season_number == num)
     }
 
-    pub fn monitor_seasons(&mut self, seasons: &[i32]) -> bool {
-        let mut changed = false;
-        for &season_id in seasons {
-            if let Some(season) = self.season_mut(season_id) {
-                changed |= !season.monitored;
-                season.monitored = true;
-            }
-        }
-        changed
+    pub fn season(&self, num: i32) -> Option<&SeasonResource> {
+        self.seasons.iter().find(|s| s.season_number == num)
     }
 
     pub fn is_tagged_with(&self, tag: &Tag) -> Option<bool> {
@@ -674,7 +703,7 @@ mod test {
             other: Value::Null,
         };
 
-        let series = SeriesResource {
+        let mut series = SeriesResource {
             id: 1234,
             title: Some("TestShow".to_string()),
             tvdb_id: 5678,
@@ -726,7 +755,7 @@ mod test {
             .await;
         let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
 
-        client.search_season(&series, 1).await?;
+        client.search_season(&mut series, 1).await?;
 
         series_mock.assert_async().await;
         command_mock.assert_async().await;
