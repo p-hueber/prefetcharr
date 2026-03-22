@@ -124,8 +124,15 @@ impl Actor {
             }
 
             // search single episodes
-            let episodes: Vec<_> = missing_episodes.collect();
-            self.sonarr_client.monitor_episodes(&episodes).await?;
+            let episodes: Vec<_> = missing_episodes
+                .map(|mut e| {
+                    e.monitored = true;
+                    e
+                })
+                .collect();
+            self.sonarr_client
+                .update_episode_monitoring(&episodes)
+                .await?;
             self.sonarr_client.search_episodes(&episodes).await?;
         }
 

@@ -145,9 +145,10 @@ impl Client {
         }
     }
 
-    pub async fn monitor_episodes(
+    async fn set_monitored_episodes(
         &self,
-        episodes: &[EpisodeResource],
+        episode_ids: Vec<i32>,
+        monitored: bool,
     ) -> Result<serde_json::Value> {
         let mut url = self.base_url.clone();
         url.path_segments_mut()
@@ -157,10 +158,9 @@ impl Client {
             .push("episode")
             .push("monitor");
 
-        let episode_ids: Vec<_> = episodes.iter().map(|e| e.id).collect();
         let request = EpisodeMonitoredResource {
             episode_ids,
-            monitored: true,
+            monitored,
         };
 
         let response = self
@@ -172,6 +172,36 @@ impl Client {
             .error_for_status()?;
 
         Ok(response.json().await?)
+    }
+
+    pub async fn update_episode_monitoring(&self, episodes: &[EpisodeResource]) -> Result<()> {
+        let mut url = self.base_url.clone();
+        url.path_segments_mut()
+            .map_err(|()| anyhow!("url is relative"))?
+            .push("api")
+            .push("v3")
+            .push("episode")
+            .push("monitor");
+
+        let monitored_ids: Vec<_> = episodes
+            .iter()
+            .filter_map(|e| e.monitored.then_some(e.id))
+            .collect();
+
+        let unmonitored_ids: Vec<_> = episodes
+            .iter()
+            .filter_map(|e| (!e.monitored).then_some(e.id))
+            .collect();
+
+        if !monitored_ids.is_empty() {
+            self.set_monitored_episodes(monitored_ids, true).await?;
+        }
+
+        if !unmonitored_ids.is_empty() {
+            self.set_monitored_episodes(unmonitored_ids, false).await?;
+        }
+
+        Ok(())
     }
 
     pub async fn episodes(
@@ -228,11 +258,14 @@ impl Client {
                 .get::<Vec<EpisodeResource>, _>("episode", Some(&[("seriesId", series_id)]))
                 .await?
                 .into_iter()
-                .filter(|e| e.season_number == season_num)
+                .filter_map(|mut e| {
+                    e.monitored = true;
+                    (e.season_number == season_num).then_some(e)
+                })
                 .collect::<Vec<_>>();
 
             if !season_episodes.is_empty() {
-                self.monitor_episodes(&season_episodes).await?;
+                self.update_episode_monitoring(&season_episodes).await?;
             }
         }
 
