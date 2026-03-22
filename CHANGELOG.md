@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased 
 
+### Changed
+
+- Restore the `monitored` state of individual episodes when monitoring the last
+  season to catch new announcements. 
+
 ## [1.4.0] - 2026-01-04
 
 ### Added
