@@ -233,11 +233,6 @@ impl Client {
         episode_start: i32,
         num: usize,
     ) -> Result<Vec<EpisodeResource>> {
-        // Season 0 contains specials without any particular order.
-        if season_start == 0 {
-            return Ok(Vec::new());
-        }
-
         let episodes = self.episodes(series).await?;
         let episodes = episode_window(season_start, episode_start, num, episodes);
 
