@@ -74,6 +74,11 @@ impl Actor {
             }
         }
 
+        // Season 0 contains specials without any particular order.
+        if np.season == 0 {
+            return Ok(());
+        }
+
         // fetch n next episodes
         let episodes = self
             .sonarr_client
@@ -660,25 +665,24 @@ mod test {
             })
             .await;
 
-        let (tx, rx) = mpsc::channel(1);
+        let (_tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
-        tokio::spawn(async move {
-            super::Actor::new(rx, sonarr, once::Seen::default(), 2, true, None)
-                .process()
-                .await;
-        });
-
-        tx.send(Message::NowPlaying(NowPlaying {
+        let np = NowPlaying {
             series: Series::Title("TestShow".to_string()),
             episode: 1,
             season: 0,
             ..np_default()
-        }))
-        .await?;
+        };
+        let handle = tokio::spawn(async move {
+            super::Actor::new(rx, sonarr, once::Seen::default(), 2, true, None)
+                .prefetch(np)
+                .await
+        });
 
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         series_mock.assert_async().await;
+        handle.await.unwrap().unwrap();
 
         Ok(())
     }
