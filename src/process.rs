@@ -85,27 +85,34 @@ impl Actor {
             .episode_range(&series, np.season, np.episode, self.prefetch_num)
             .await?;
 
-        // monitor series
-        let mut series_modified = !series.monitored;
-        series.monitored = true;
-
-        // Not enough episodes announced
         if episodes.len() < self.prefetch_num {
             info!("Not as many episodes announced, monitor new items instead");
             self.sonarr_client
                 .monitor_unannounced_episodes(&mut series)
                 .await?;
-            series_modified = false;
+        } else if !series.monitored {
+            series.monitored = true;
+            self.sonarr_client.put_series(&series).await?;
         }
 
-        let missing_episodes = episodes.into_iter().filter(|e| !e.has_file);
+        let missing_episodes: Vec<_> = episodes.into_iter().filter(|e| !e.has_file).collect();
+        let mut episodes_to_search = Vec::new();
+
         if self.request_seasons {
-            // search full seasons
-            let mut season_numbers = missing_episodes
-                .map(|e| e.season_number)
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .collect::<Vec<_>>();
+            let mut seasons_to_search: HashSet<i32> = HashSet::new();
+
+            for e in missing_episodes {
+                if series
+                    .season(e.season_number)
+                    .is_some_and(sonarr::SeasonResource::is_fully_aired)
+                {
+                    seasons_to_search.insert(e.season_number);
+                } else {
+                    episodes_to_search.push(e);
+                }
+            }
+
+            let mut season_numbers: Vec<_> = seasons_to_search.into_iter().collect();
             season_numbers.sort_unstable();
 
             let mut error = false;
@@ -124,21 +131,23 @@ impl Actor {
                 }
             }
         } else {
-            if series_modified {
-                self.sonarr_client.put_series(&series).await?;
-            }
+            episodes_to_search = missing_episodes;
+        }
 
-            // search single episodes
-            let episodes: Vec<_> = missing_episodes
+        if !episodes_to_search.is_empty() {
+            let episodes_to_search: Vec<_> = episodes_to_search
+                .into_iter()
                 .map(|mut e| {
                     e.monitored = true;
                     e
                 })
                 .collect();
             self.sonarr_client
-                .update_episode_monitoring(&episodes)
+                .update_episode_monitoring(&episodes_to_search)
                 .await?;
-            self.sonarr_client.search_episodes(&episodes).await?;
+            self.sonarr_client
+                .search_episodes(&episodes_to_search)
+                .await?;
         }
 
         Ok(())
@@ -193,6 +202,18 @@ mod test {
                     .query_param("seriesId", "1234")
                     .query_param_count(".*", ".*", 1);
                 then.json_body(episodes());
+            })
+            .await;
+
+        let put_series_mock0 = server
+            .mock_async(|when, then| {
+                let mut series_monitored = series_unmonitored()[0].clone();
+                series_monitored["monitored"] = true.into();
+                series_monitored["monitorNewItems"] = "all".into();
+                when.path("/pathprefix/api/v3/series/1234")
+                    .method(PUT)
+                    .json_body(serde_json::json!(series_monitored));
+                then.json_body(json!({}));
             })
             .await;
 
@@ -269,6 +290,7 @@ mod test {
 
         series_mock.assert_async().await;
         episodes_mock.assert_async().await;
+        put_series_mock0.assert_async().await;
         put_series_mock1.assert_async().await;
         command_mock1.assert_async().await;
         put_series_mock2.assert_async().await;
@@ -493,6 +515,7 @@ mod test {
                         "episodeCount": 8,
                         "episodeFileCount": 8,
                         "totalEpisodeCount": 8,
+                        "nextAiring": null,
                     }
                 },{
                     "seasonNumber": 1,
@@ -502,6 +525,7 @@ mod test {
                         "episodeCount": 8,
                         "episodeFileCount": 8,
                         "totalEpisodeCount": 8,
+                        "nextAiring": null,
                     }
                 },{
                     "seasonNumber": 2,
@@ -511,6 +535,7 @@ mod test {
                         "episodeCount": 8,
                         "episodeFileCount": 8,
                         "totalEpisodeCount": 8,
+                        "nextAiring": null,
                     }
                 }]
             }]
@@ -532,6 +557,7 @@ mod test {
                     "episodeCount": 8,
                     "episodeFileCount": 8,
                     "totalEpisodeCount": 8,
+                    "nextAiring": null,
                 }
             },{
                 "seasonNumber": 1,
@@ -541,6 +567,7 @@ mod test {
                     "episodeCount": 8,
                     "episodeFileCount": 8,
                     "totalEpisodeCount": 8,
+                    "nextAiring": null,
                 }
             },{
                 "seasonNumber": 2,
@@ -550,6 +577,7 @@ mod test {
                     "episodeCount": 8,
                     "episodeFileCount": 8,
                     "totalEpisodeCount": 8,
+                    "nextAiring": null,
                 }
                 }]
         })
@@ -608,7 +636,18 @@ mod test {
             })
             .await;
 
-        let put_series_mock = server
+        let put_series_mock0 = server
+            .mock_async(|when, then| {
+                let mut series = series_unmonitored()[0].clone();
+                series["monitored"] = serde_json::Value::Bool(true);
+                when.path("/pathprefix/api/v3/series/1234")
+                    .method(PUT)
+                    .json_body(series);
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let put_series_mock1 = server
             .mock_async(|when, then| {
                 let mut series_monitored = series_monitored();
                 series_monitored["seasons"][0]["monitored"] = serde_json::Value::Bool(false);
@@ -653,7 +692,8 @@ mod test {
 
         series_mock.assert_async().await;
         episodes_mock.assert_async().await;
-        put_series_mock.assert_async().await;
+        put_series_mock0.assert_async().await;
+        put_series_mock1.assert_async().await;
         command_mock.assert_async().await;
 
         Ok(())
@@ -727,6 +767,18 @@ mod test {
             })
             .await;
 
+        let put_series_mock = server
+            .mock_async(|when, then| {
+                let mut series = series_unmonitored()[0].clone();
+                series["monitored"] = serde_json::Value::Bool(true);
+                series["seasons"][1]["monitored"] = serde_json::Value::Bool(true);
+                when.path("/pathprefix/api/v3/series/1234")
+                    .method(PUT)
+                    .json_body(series);
+                then.json_body(json!({}));
+            })
+            .await;
+
         let put_monitor_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/episode/monitor")
@@ -775,8 +827,190 @@ mod test {
         series_mock.assert_async().await;
         episodes_mock.assert_async().await;
         season_episodes_mock.assert_async().await;
+        put_series_mock.assert_async().await;
         put_monitor_mock.assert_async().await;
         command_mock.assert_async().await;
+
+        handle.await.unwrap().unwrap();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    // When request_seasons=true but the season is still airing, fall back to individual episode search.
+    async fn search_season_not_fully_aired() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let mut series = series_unmonitored();
+        series[0]["monitored"] = true.into();
+        series[0]["seasons"][1]["statistics"]["nextAiring"] = "2025-06-01T00:00:00Z".into();
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series");
+                then.json_body(series.clone());
+            })
+            .await;
+
+        let episodes_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode")
+                    .query_param("seriesId", "1234")
+                    .query_param_count(".*", ".*", 1);
+                then.json_body(episodes());
+            })
+            .await;
+
+        let put_monitor_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode/monitor")
+                    .method(PUT)
+                    .json_body(serde_json::json!({
+                        "episodeIds": [18],
+                        "monitored": true
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let command_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/command")
+                    .method(POST)
+                    .json_body(json!({
+                        "name": "EpisodeSearch",
+                        "episodeIds": [18]
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let (_tx, rx) = mpsc::channel(1);
+        let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
+        let np = NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+            ..np_default()
+        };
+        let handle = tokio::spawn(async move {
+            super::Actor::new(rx, sonarr, once::Seen::default(), 1, true, None)
+                .prefetch(np)
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        series_mock.assert_async().await;
+        episodes_mock.assert_async().await;
+        put_monitor_mock.assert_async().await;
+        command_mock.assert_async().await;
+
+        handle.await.unwrap().unwrap();
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    // When request_seasons=true and episodes span two seasons — one fully aired, one still airing —
+    // the fully aired season gets a SeasonSearch and the airing season gets individual EpisodeSearch.
+    async fn search_season_mixed() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let mut series = series_unmonitored();
+        series[0]["monitored"] = true.into();
+        series[0]["seasons"][1]["statistics"]["nextAiring"] = "2025-06-01T00:00:00Z".into();
+
+        let series_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/series");
+                then.json_body(series.clone());
+            })
+            .await;
+
+        let episodes_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode")
+                    .query_param("seriesId", "1234")
+                    .query_param_count(".*", ".*", 1);
+                then.json_body(episodes());
+            })
+            .await;
+
+        // Season 2 is fully aired and not yet monitored → search_season sets it monitored
+        let put_series_mock = server
+            .mock_async(|when, then| {
+                let mut s = series[0].clone();
+                s["seasons"][2]["monitored"] = true.into();
+                when.path("/pathprefix/api/v3/series/1234")
+                    .method(PUT)
+                    .json_body(s);
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let season_command_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/command")
+                    .method(POST)
+                    .json_body(json!({
+                        "name": "SeasonSearch",
+                        "seriesId": 1234,
+                        "seasonNumber": 2,
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        // Season 1 is still airing → fall back to individual episode search for s1e8 (id=18)
+        let put_monitor_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode/monitor")
+                    .method(PUT)
+                    .json_body(serde_json::json!({
+                        "episodeIds": [18],
+                        "monitored": true
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let episode_command_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/command")
+                    .method(POST)
+                    .json_body(json!({
+                        "name": "EpisodeSearch",
+                        "episodeIds": [18]
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let (_tx, rx) = mpsc::channel(1);
+        let sonarr = crate::sonarr::Client::new(&server.url("/pathprefix"), "secret")?;
+        let np = NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+            ..np_default()
+        };
+        let handle = tokio::spawn(async move {
+            super::Actor::new(rx, sonarr, once::Seen::default(), 2, true, None)
+                .prefetch(np)
+                .await
+        });
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        series_mock.assert_async().await;
+        episodes_mock.assert_async().await;
+        put_series_mock.assert_async().await;
+        season_command_mock.assert_async().await;
+        put_monitor_mock.assert_async().await;
+        episode_command_mock.assert_async().await;
 
         handle.await.unwrap().unwrap();
 

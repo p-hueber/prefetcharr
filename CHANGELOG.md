@@ -10,7 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Restore the `monitored` state of individual episodes when monitoring the last
-  season to catch new announcements. 
+  season to catch new announcements.
+- When `request_seasons` is enabled, only search for the requested episodes
+  individually if their season is still airing instead of searching the full
+  season.
 
 ### Fixed
 

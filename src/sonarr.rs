@@ -289,7 +289,6 @@ impl Client {
             .with_context(|| format!("there is no season {season_num}"))?;
 
         if season.monitored {
-            // Ensure all episodes in the season are monitored
             let mut season_episodes = self.episodes_season(series, season).await?;
             for e in &mut season_episodes {
                 e.monitored = true;
@@ -297,12 +296,11 @@ impl Client {
             self.update_episode_monitoring(&season_episodes).await?;
         }
 
-        if !season.monitored || !series.monitored {
+        if !season.monitored {
             let season = series
                 .season_mut(season_num)
                 .with_context(|| format!("there is no season {season_num}"))?;
             season.monitored = true;
-            series.monitored = true;
             self.put_series(series).await?;
         }
 
@@ -395,6 +393,7 @@ pub struct SeasonStatisticsResource {
     pub episode_count: i32,
     pub episode_file_count: i32,
     pub total_episode_count: i32,
+    pub next_airing: Option<String>,
     #[serde(flatten)]
     other: serde_json::Value,
 }
@@ -407,6 +406,18 @@ pub struct SeasonResource {
     pub statistics: Option<SeasonStatisticsResource>,
     #[serde(flatten)]
     other: serde_json::Value,
+}
+
+impl SeasonResource {
+    pub fn is_fully_aired(&self) -> bool {
+        !matches!(
+            self.statistics,
+            Some(SeasonStatisticsResource {
+                next_airing: Some(_),
+                ..
+            })
+        )
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -692,6 +703,7 @@ mod test {
                 episode_count: 8,
                 episode_file_count: 8,
                 total_episode_count: 0,
+                next_airing: None,
                 other: Value::Null,
             }
             .into(),
@@ -722,33 +734,33 @@ mod test {
             })
             .await;
 
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
+
         let series_mock = server
             .mock_async(|when, then| {
                 when.path("/pathprefix/api/v3/series/1234")
                     .method(PUT)
-                    .json_body(serde_json::json!(
-                        {
-                            "id": 1234,
-                            "title": "TestShow",
-                            "tvdbId": 5678,
+                    .json_body(serde_json::json!({
+                        "id": 1234,
+                        "title": "TestShow",
+                        "tvdbId": 5678,
+                        "monitored": false,
+                        "monitorNewItems": "all",
+                        "seasons": [{
+                            "seasonNumber": 1,
                             "monitored": true,
-                            "monitorNewItems": "all",
-                            "seasons": [{
-                                "seasonNumber": 1,
-                                "monitored": true,
-                                "statistics": {
-                                    "sizeOnDisk": 9000,
-                                    "episodeCount": 8,
-                                    "episodeFileCount": 8,
-                                    "totalEpisodeCount": 0,
-                                }
-                            }]
-                        }
-                    ));
+                            "statistics": {
+                                "sizeOnDisk": 9000,
+                                "episodeCount": 8,
+                                "episodeFileCount": 8,
+                                "totalEpisodeCount": 0,
+                                "nextAiring": null,
+                            }
+                        }]
+                    }));
                 then.json_body(json!({}));
             })
             .await;
-        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
 
         client.search_season(&mut series, 1).await?;
 
@@ -1001,5 +1013,52 @@ mod test {
             monitored: false,
             other: Value::default(),
         }
+    }
+
+    #[test]
+    fn fully_aired_with_next_airing_null() {
+        let season = SeasonResource {
+            season_number: 1,
+            monitored: true,
+            statistics: Some(SeasonStatisticsResource {
+                size_on_disk: 1000,
+                episode_count: 8,
+                episode_file_count: 8,
+                total_episode_count: 8,
+                next_airing: None,
+                other: Value::Null,
+            }),
+            other: Value::Null,
+        };
+        assert!(season.is_fully_aired());
+    }
+
+    #[test]
+    fn not_fully_aired_with_next_airing() {
+        let season = SeasonResource {
+            season_number: 1,
+            monitored: true,
+            statistics: Some(SeasonStatisticsResource {
+                size_on_disk: 1000,
+                episode_count: 8,
+                episode_file_count: 8,
+                total_episode_count: 8,
+                next_airing: Some("2025-01-01T00:00:00Z".to_string()),
+                other: Value::Null,
+            }),
+            other: Value::Null,
+        };
+        assert!(!season.is_fully_aired());
+    }
+
+    #[test]
+    fn fully_aired_with_no_statistics() {
+        let season = SeasonResource {
+            season_number: 1,
+            monitored: true,
+            statistics: None,
+            other: Value::Null,
+        };
+        assert!(season.is_fully_aired());
     }
 }
