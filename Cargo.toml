@@ -28,6 +28,9 @@ tracing-subscriber = { version = "0", features = ["env-filter"] }
 httpmock = "0.8.3"
 test-log = { version = "0.2.18", default-features = false, features = ["color", "trace"] }
 
+[profile.dev]
+incremental = false
+
 [profile.release]
 strip = "debuginfo"
 lto = "fat"

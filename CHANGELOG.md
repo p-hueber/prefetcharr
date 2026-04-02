@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Specials don't trigger monitoring of future episodes.
+- Try all season searches before reporting an error instead of stopping at the
+  first failure.
 
 
 ## [1.4.0] - 2026-01-04
