@@ -125,10 +125,9 @@ impl Actor {
                     error!("skip searching for season {season_num}: {err:#}");
                     error = true;
                 }
-
-                if error {
-                    return Err(anyhow!("failed searching one or more seasons"));
-                }
+            }
+            if error {
+                return Err(anyhow!("failed searching one or more seasons"));
             }
         } else {
             episodes_to_search = missing_episodes;
