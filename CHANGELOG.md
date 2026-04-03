@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased 
 
+
+## [1.5.0] - 2026-04-03
+
 ### Changed
 
 - Restore the `monitored` state of individual episodes when monitoring the last
