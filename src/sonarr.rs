@@ -482,6 +482,7 @@ mod test {
         SeriesResource, Tag,
     };
 
+    // API key is sent via X-Api-Key header on requests
     #[tokio::test]
     async fn auth() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -502,6 +503,7 @@ mod test {
         Ok(())
     }
 
+    // Parses series response without monitorNewItems field (Sonarr v3 compatibility)
     #[tokio::test]
     async fn series_v3() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -530,6 +532,7 @@ mod test {
         Ok(())
     }
 
+    // Parses multiple series entries from a single API response
     #[tokio::test]
     async fn series_multiple() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -566,6 +569,7 @@ mod test {
         Ok(())
     }
 
+    // Parses seasons that lack a statistics field
     #[tokio::test]
     async fn series_parse_missing_statistics() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -598,6 +602,7 @@ mod test {
         Ok(())
     }
 
+    // Malformed series entries are silently skipped, valid ones still returned
     #[tokio::test]
     async fn series_skip_malformed_series() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -629,6 +634,7 @@ mod test {
         Ok(())
     }
 
+    // Empty series list from the API returns an empty vec
     #[tokio::test]
     async fn series_emtpy() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -649,6 +655,7 @@ mod test {
         Ok(())
     }
 
+    // PUT request serializes series resource with correct camelCase JSON body
     #[tokio::test]
     async fn put_series() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -691,6 +698,7 @@ mod test {
         Ok(())
     }
 
+    // Season search monitors the season via PUT, then issues a SeasonSearch command
     #[tokio::test]
     async fn search_season() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -770,6 +778,7 @@ mod test {
         Ok(())
     }
 
+    // Returns empty when requesting 0 episodes or when no next episode exists
     #[test]
     fn episode_window_none() {
         let episodes = vec![EpisodeResource {
@@ -780,6 +789,7 @@ mod test {
         assert!(super::episode_window(1, 1, 1, episodes.clone()).is_empty());
     }
 
+    // Stops collecting episodes when there is a gap in episode or season numbering
     #[test]
     fn episode_window_gap() {
         let episodes = vec![
@@ -824,6 +834,7 @@ mod test {
         assert!(super::episode_window(1, 1, 1, episodes.clone()).is_empty());
     }
 
+    // Window continues into the next season when the current season ends
     #[test]
     fn episode_window_next_season() {
         let episodes = vec![
@@ -844,6 +855,7 @@ mod test {
         assert_eq!(res[0].season_number, 2);
     }
 
+    // Returns multiple consecutive episodes spanning a season boundary
     #[test]
     fn episode_window_several() {
         let episodes = vec![
@@ -874,6 +886,7 @@ mod test {
         assert_eq!(res[1].season_number, 2);
     }
 
+    // Matches series by resolved tag ID; returns None for unresolved label
     #[test]
     fn series_match_tag() {
         let series: SeriesResource = serde_json::from_value(serde_json::json!(
@@ -898,6 +911,7 @@ mod test {
         );
     }
 
+    // Returns None when the series has no tags field at all
     #[test]
     fn series_no_tag() {
         let series: SeriesResource = serde_json::from_value(serde_json::json!(
@@ -919,6 +933,7 @@ mod test {
         );
     }
 
+    // Resolves label to tag ID, leaves unknown labels unresolved, and skips already-resolved IDs
     #[tokio::test]
     async fn update_tag() -> anyhow::Result<()> {
         let server = httpmock::MockServer::start_async().await;
@@ -956,6 +971,7 @@ mod test {
         Ok(())
     }
 
+    // Tag entry without a label in Sonarr leaves the local label unresolved
     #[tokio::test]
     async fn update_tag_no_label() -> anyhow::Result<()> {
         let server = httpmock::MockServer::start_async().await;
@@ -981,6 +997,7 @@ mod test {
         Ok(())
     }
 
+    // Empty tag list from Sonarr leaves the label unresolved
     #[tokio::test]
     async fn update_tag_no_tags() -> anyhow::Result<()> {
         let server = httpmock::MockServer::start_async().await;
@@ -1015,6 +1032,7 @@ mod test {
         }
     }
 
+    // Season with next_airing = None is considered fully aired
     #[test]
     fn fully_aired_with_next_airing_null() {
         let season = SeasonResource {
@@ -1033,6 +1051,7 @@ mod test {
         assert!(season.is_fully_aired());
     }
 
+    // Season with a future next_airing date is not fully aired
     #[test]
     fn not_fully_aired_with_next_airing() {
         let season = SeasonResource {
@@ -1051,6 +1070,7 @@ mod test {
         assert!(!season.is_fully_aired());
     }
 
+    // Season without statistics is treated as fully aired
     #[test]
     fn fully_aired_with_no_statistics() {
         let season = SeasonResource {

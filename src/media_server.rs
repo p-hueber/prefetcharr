@@ -179,6 +179,7 @@ pub mod test {
         }
     }
 
+    // First poll returns results immediately without waiting for the interval
     #[tokio::test]
     async fn now_playing_first_instant() {
         let client = Mock::new();
@@ -196,6 +197,7 @@ pub mod test {
             .unwrap_err();
     }
 
+    // Second poll waits for the configured interval before returning
     #[tokio::test]
     async fn now_playing_second_instant() {
         let client = Mock::new();
@@ -213,6 +215,7 @@ pub mod test {
         assert_eq!(np, expect);
     }
 
+    // Bad sessions are silently filtered out, valid sessions still returned
     #[tokio::test]
     async fn now_playing_ignore_bad_session() {
         let client = Mock {
@@ -233,6 +236,7 @@ pub mod test {
         assert_eq!(np, expect);
     }
 
+    // Failed API calls propagate as errors in the update stream
     #[tokio::test]
     async fn now_playing_ignore_bad_call() {
         let client = Mock {

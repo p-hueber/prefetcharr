@@ -48,6 +48,7 @@ mod test {
     const ERR: Result<(), &'static str> = Err("err");
     const EPSILON: u64 = 1;
 
+    // Succeeds immediately with zero retries configured
     #[tokio::test]
     async fn zero_retries_success() {
         let earlier = std::time::Instant::now();
@@ -56,6 +57,7 @@ mod test {
         assert!(t < duration(EPSILON));
     }
 
+    // Fails immediately with zero retries configured
     #[tokio::test]
     async fn zero_retries_fail() {
         let earlier = std::time::Instant::now();
@@ -64,6 +66,7 @@ mod test {
         assert!(t < duration(EPSILON));
     }
 
+    // Succeeds after two failures with correct exponential backoff timing
     #[tokio::test]
     async fn three_retries_early_success() {
         let mut failures = 2usize;
@@ -82,6 +85,7 @@ mod test {
         assert!(t < duration(2 + 4 + EPSILON));
     }
 
+    // Exhausts all retries with correct total exponential backoff duration
     #[tokio::test]
     async fn three_retries_fail() {
         let earlier = std::time::Instant::now();

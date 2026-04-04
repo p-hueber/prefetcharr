@@ -200,6 +200,7 @@ mod test {
         })
     }
 
+    // Extracts NowPlaying from a valid Plex session, resolving the series via TVDB lookup
     #[tokio::test]
     async fn single_session() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -235,6 +236,7 @@ mod test {
         Ok(())
     }
 
+    // Invalid and incomplete sessions are skipped, valid sessions still extracted
     #[tokio::test]
     async fn skip_invalid_sessions() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -304,6 +306,7 @@ mod test {
         Ok(())
     }
 
+    // Falls back to series title when the TVDB metadata lookup fails
     #[tokio::test]
     async fn name_fallback() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;

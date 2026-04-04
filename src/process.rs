@@ -215,6 +215,7 @@ mod test {
         )
     }
 
+    // Prefetching from mid-season triggers season searches for the current and next season
     #[tokio::test]
     #[test_log::test]
     async fn search_next() -> Result<(), Box<dyn std::error::Error>> {
@@ -252,6 +253,7 @@ mod test {
         Ok(())
     }
 
+    // With request_seasons disabled, prefetches individual episodes across season boundaries
     #[tokio::test]
     #[test_log::test]
     async fn search_episodes() -> Result<(), Box<dyn std::error::Error>> {
@@ -280,6 +282,7 @@ mod test {
         Ok(())
     }
 
+    // When fewer episodes remain than prefetch_num, monitors unannounced episodes and searches only what's available
     #[tokio::test]
     #[test_log::test]
     async fn search_episodes_exceeding() -> Result<(), Box<dyn std::error::Error>> {
@@ -313,6 +316,7 @@ mod test {
         Ok(())
     }
 
+    // Watching the pilot triggers unannounced episode monitoring since remaining episodes < prefetch_num
     #[tokio::test]
     #[test_log::test]
     async fn pilot() -> Result<(), Box<dyn std::error::Error>> {
@@ -343,6 +347,7 @@ mod test {
         Ok(())
     }
 
+    // Season 0 (specials) is skipped without triggering any searches or monitoring changes
     #[tokio::test]
     #[test_log::test]
     async fn special_episode() -> Result<(), Box<dyn std::error::Error>> {
@@ -363,6 +368,7 @@ mod test {
         Ok(())
     }
 
+    // When a season is already monitored, its episodes are explicitly monitored before searching
     #[tokio::test]
     #[test_log::test]
     async fn monitor_episodes_of_monitored_season() -> Result<(), Box<dyn std::error::Error>> {
@@ -396,6 +402,7 @@ mod test {
         Ok(())
     }
 
+    // Seasons still airing fall back to episode search instead of season search
     #[tokio::test]
     #[test_log::test]
     async fn search_season_not_fully_aired() -> Result<(), Box<dyn std::error::Error>> {
@@ -424,6 +431,7 @@ mod test {
         Ok(())
     }
 
+    // Fully aired seasons use season search while still-airing seasons fall back to episode search
     #[tokio::test]
     #[test_log::test]
     async fn search_season_mixed() -> Result<(), Box<dyn std::error::Error>> {
