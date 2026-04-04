@@ -444,4 +444,102 @@ mod test {
 
         Ok(())
     }
+
+    // Non-episode sessions (e.g. movies) are rejected by extract
+    #[tokio::test]
+    async fn extract_rejects_non_episode() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v2");
+                #[allow(clippy::unreadable_literal)]
+                then.json_body(serde_json::json!(
+                    {
+                        "response": {
+                            "data": {
+                                "sessions": [{
+                                    "grandparent_title": "Some Movie",
+                                    "grandparent_guids": [],
+                                    "media_index": "0",
+                                    "parent_media_index": "0",
+                                    "media_type": "movie",
+                                    "user_id": 29344801,
+                                    "username": "user",
+                                    "library_name": "Movies"
+                                }]
+                            }
+                        }
+                    }
+                ));
+            })
+            .await;
+
+        let client = tautulli::Client::new(&server.url("/pathprefix"), "secret")?;
+        let session = client.sessions().await?.into_iter().next().unwrap();
+        assert!(client.extract(session).await.is_err());
+
+        Ok(())
+    }
+
+    // Integer media_index/parent_media_index values (not just strings) deserialize correctly
+    #[tokio::test]
+    async fn integer_media_index() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v2");
+                #[allow(clippy::unreadable_literal)]
+                then.json_body(serde_json::json!(
+                    {
+                        "response": {
+                            "data": {
+                                "sessions": [{
+                                    "grandparent_title": "Test Show",
+                                    "grandparent_guids": ["tvdb://1234"],
+                                    "media_index": 5,
+                                    "parent_media_index": 3,
+                                    "media_type": "episode",
+                                    "user_id": 29344801,
+                                    "username": "user",
+                                    "library_name": "TV Shows"
+                                }]
+                            }
+                        }
+                    }
+                ));
+            })
+            .await;
+
+        let client = tautulli::Client::new(&server.url("/pathprefix"), "secret")?;
+        let session = client.sessions().await?.into_iter().next().unwrap();
+        let extract = client.extract(session).await?;
+
+        assert_eq!(extract.episode, 5);
+        assert_eq!(extract.season, 3);
+
+        Ok(())
+    }
+
+    // Empty data object (no `sessions` key) yields no sessions
+    #[tokio::test]
+    async fn empty_sessions_response() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v2");
+                then.json_body(serde_json::json!({
+                    "response": { "data": {} }
+                }));
+            })
+            .await;
+
+        let client = tautulli::Client::new(&server.url("/pathprefix"), "secret")?;
+        let sessions = client.sessions().await?;
+        assert!(sessions.is_empty());
+
+        Ok(())
+    }
 }

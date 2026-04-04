@@ -62,7 +62,6 @@ impl FakeSonarr {
         self.state.lock().unwrap().episodes.extend(episodes);
     }
 
-    #[allow(dead_code)]
     pub fn add_tag(&self, id: i32, label: &str) {
         self.state
             .lock()
