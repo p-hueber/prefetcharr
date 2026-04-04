@@ -25,6 +25,7 @@ tracing-appender = "0"
 tracing-subscriber = { version = "0", features = ["env-filter"] }
 
 [dev-dependencies]
+axum = "0.8"
 httpmock = "0.8.3"
 test-log = { version = "0.2.18", default-features = false, features = ["color", "trace"] }
 

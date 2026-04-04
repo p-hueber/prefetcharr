@@ -21,6 +21,8 @@ use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::Subscribe
 use crate::{media_server::plex, util::once::Seen};
 
 mod config;
+#[cfg(test)]
+mod fake_sonarr;
 mod filter;
 mod media_server;
 mod process;
