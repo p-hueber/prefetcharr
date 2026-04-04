@@ -51,12 +51,14 @@ mod test {
         }
     }
 
+    // Empty user list accepts all sessions
     #[tokio::test]
     async fn users_unrestricted() {
         let mut filter = super::users(&[]);
         assert!(filter(&np_default()).await);
     }
 
+    // Sessions matching a configured user name are accepted
     #[tokio::test]
     async fn users_accepted_by_name() {
         let users = vec!["Other".to_string(), "User".to_string()];
@@ -71,6 +73,7 @@ mod test {
         assert!(filter(&np).await);
     }
 
+    // Sessions matching a configured user ID are accepted
     #[tokio::test]
     async fn users_accepted_by_id() {
         let users = vec!["1".to_string(), "2".to_string()];
@@ -85,6 +88,7 @@ mod test {
         assert!(filter(&np).await);
     }
 
+    // Sessions not matching any configured user are rejected
     #[tokio::test]
     async fn users_rejected() {
         let users = vec!["Nope".to_string()];
@@ -93,12 +97,14 @@ mod test {
         assert!(!filter(&np).await);
     }
 
+    // Empty library list accepts all sessions
     #[tokio::test]
     async fn libraries_unrestricted() {
         let mut filter = super::libraries(&[]);
         assert!(filter(&np_default()).await);
     }
 
+    // Sessions from a matching library are accepted
     #[tokio::test]
     async fn libraries_accepted() {
         let libraries = vec!["Movies".to_string(), "TV".to_string()];
@@ -110,6 +116,7 @@ mod test {
         assert!(filter(&np).await);
     }
 
+    // Sessions with no library set are rejected when a library filter is active
     #[tokio::test]
     async fn libraries_unknown_rejected() {
         let libraries = vec!["Nope".to_string()];
@@ -121,6 +128,7 @@ mod test {
         assert!(!filter(&np).await);
     }
 
+    // Sessions from a non-matching library are rejected
     #[tokio::test]
     async fn libraries_rejected() {
         let libraries = vec!["TV".to_string()];

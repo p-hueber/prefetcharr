@@ -360,6 +360,7 @@ mod test {
                 )
     }
 
+    // Extracts NowPlaying from a Jellyfin session with TVDB ID and library matching
     #[tokio::test]
     async fn single_session() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -415,6 +416,7 @@ mod test {
         Ok(())
     }
 
+    // Invalid sessions and failed item lookups are skipped, valid sessions still extracted
     #[tokio::test]
     async fn skip_invalid_sessions() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -488,6 +490,7 @@ mod test {
         Ok(())
     }
 
+    // Falls back to series name when no TVDB provider ID exists (Emby fork)
     #[tokio::test]
     async fn name_fallback_emby() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -542,11 +545,13 @@ mod test {
         Ok(())
     }
 
+    // Rejects invalid URLs at client construction time
     #[test]
     fn bad_url() {
         assert!(embyfin::Client::new("/notanurl", "secret", embyfin::Fork::Jellyfin,).is_err());
     }
 
+    // Polling respects the configured interval between session updates
     #[tokio::test]
     async fn interval() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -601,6 +606,7 @@ mod test {
         Ok(())
     }
 
+    // Jellyfin sends the API key via MediaBrowser Token authorization header
     #[tokio::test]
     async fn jellyfin_auth() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -648,6 +654,7 @@ mod test {
         Ok(())
     }
 
+    // Emby sends the API key via X-Emby-Token header
     #[tokio::test]
     async fn emby_auth() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;

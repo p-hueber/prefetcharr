@@ -209,6 +209,7 @@ mod test {
         )
     }
 
+    // Probe succeeds when the Tautulli API responds
     #[tokio::test]
     async fn probe() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -228,6 +229,7 @@ mod test {
         Ok(())
     }
 
+    // Extracts NowPlaying with correct fields from a Tautulli session
     #[tokio::test]
     async fn extract() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -263,6 +265,7 @@ mod test {
         Ok(())
     }
 
+    // Deserializes a single Tautulli session with correct field mapping
     #[tokio::test]
     async fn single_session() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -299,6 +302,7 @@ mod test {
 
         Ok(())
     }
+    // Returns NowPlaying via the polling update stream
     #[tokio::test]
     async fn single_session_with_updates() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -330,6 +334,7 @@ mod test {
         Ok(())
     }
 
+    // Invalid sessions are skipped, valid sessions still extracted
     #[tokio::test]
     async fn skip_invalid_sessions() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
@@ -389,6 +394,7 @@ mod test {
         Ok(())
     }
 
+    // Falls back to series title when TVDB GUID is invalid
     #[tokio::test]
     async fn name_fallback() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;

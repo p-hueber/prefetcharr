@@ -49,8 +49,9 @@ mod test {
             library,
         }
     }
-    #[test]
 
+    // Same NowPlaying is accepted once and rejected on second attempt
+    #[test]
     fn twice() {
         let mut seen = Seen::default();
         let np = now_playing();
@@ -58,6 +59,7 @@ mod test {
         assert!(!seen.once(np));
     }
 
+    // Entries older than the retention period are pruned and accepted again
     #[test]
     fn prune_old() {
         let mut seen = Seen::default();
@@ -68,6 +70,7 @@ mod test {
         assert!(seen.once(np));
     }
 
+    // Entries within the retention period are still rejected as duplicates
     #[test]
     fn touch() {
         let mut seen = Seen::default();
@@ -85,6 +88,7 @@ mod test {
         assert!(!seen.once(np));
     }
 
+    // Different seasons of the same series are tracked independently
     #[test]
     fn different_season() {
         let mut seen = Seen::default();
