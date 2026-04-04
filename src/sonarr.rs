@@ -778,6 +778,83 @@ mod test {
         Ok(())
     }
 
+    // Already-monitored season explicitly monitors all episodes before searching
+    #[tokio::test]
+    async fn search_season_already_monitored() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let season = SeasonResource {
+            season_number: 1,
+            monitored: true,
+            statistics: SeasonStatisticsResource {
+                size_on_disk: 9000,
+                episode_count: 2,
+                episode_file_count: 0,
+                total_episode_count: 2,
+                next_airing: None,
+                other: Value::Null,
+            }
+            .into(),
+            other: Value::Null,
+        };
+
+        let mut series = SeriesResource {
+            id: 1234,
+            title: Some("TestShow".to_string()),
+            tvdb_id: 5678,
+            monitored: false,
+            monitor_new_items: Some(NewItemMonitorTypes::All),
+            seasons: vec![season],
+            tags: None,
+            other: serde_json::json!({}),
+        };
+
+        let episodes_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode")
+                    .query_param("seriesId", "1234")
+                    .query_param("seasonNumber", "1")
+                    .method(GET);
+                then.json_body(json!([
+                    {"id": 1, "seasonNumber": 1, "episodeNumber": 1, "hasFile": false, "monitored": false},
+                    {"id": 2, "seasonNumber": 1, "episodeNumber": 2, "hasFile": false, "monitored": false},
+                ]));
+            })
+            .await;
+
+        let monitor_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/episode/monitor")
+                    .method(PUT)
+                    .json_body(json!({"episodeIds": [1, 2], "monitored": true}));
+                then.json_body(json!([]));
+            })
+            .await;
+
+        let command_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/api/v3/command")
+                    .method(POST)
+                    .json_body(json!({
+                        "name": "SeasonSearch",
+                        "seriesId": 1234,
+                        "seasonNumber": 1,
+                    }));
+                then.json_body(json!({}));
+            })
+            .await;
+
+        let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
+
+        client.search_season(&mut series, 1).await?;
+
+        episodes_mock.assert_async().await;
+        monitor_mock.assert_async().await;
+        command_mock.assert_async().await;
+
+        Ok(())
+    }
+
     // Returns empty when requesting 0 episodes or when no next episode exists
     #[test]
     fn episode_window_none() {
@@ -884,6 +961,38 @@ mod test {
 
         assert_eq!(res[1].episode_number, 2);
         assert_eq!(res[1].season_number, 2);
+    }
+
+    // Duplicate episode listings are included with a warning instead of breaking the window
+    #[test]
+    fn episode_window_duplicate() {
+        let episodes = vec![
+            EpisodeResource {
+                episode_number: 1,
+                ..default_episode()
+            },
+            EpisodeResource {
+                id: 2,
+                episode_number: 2,
+                ..default_episode()
+            },
+            EpisodeResource {
+                id: 3,
+                episode_number: 2,
+                ..default_episode()
+            },
+            EpisodeResource {
+                id: 4,
+                episode_number: 3,
+                ..default_episode()
+            },
+        ];
+
+        let res = super::episode_window(1, 1, 3, episodes);
+        assert_eq!(res.len(), 3);
+        assert_eq!(res[0].episode_number, 2);
+        assert_eq!(res[1].episode_number, 2);
+        assert_eq!(res[2].episode_number, 3);
     }
 
     // Matches series by resolved tag ID; returns None for unresolved label

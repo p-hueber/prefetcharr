@@ -203,6 +203,15 @@ mod test {
     }
 
     fn actor(fake: &FakeSonarr, prefetch_num: usize, request_seasons: bool) -> super::Actor {
+        actor_with_tag(fake, prefetch_num, request_seasons, None)
+    }
+
+    fn actor_with_tag(
+        fake: &FakeSonarr,
+        prefetch_num: usize,
+        request_seasons: bool,
+        exclude_tag: Option<String>,
+    ) -> super::Actor {
         let (_tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(fake.url(), "secret").unwrap();
         super::Actor::new(
@@ -211,7 +220,7 @@ mod test {
             once::Seen::default(),
             prefetch_num,
             request_seasons,
-            None,
+            exclude_tag,
         )
     }
 
@@ -465,6 +474,170 @@ mod test {
                 json!({"name": "SeasonSearch", "seriesId": 1234, "seasonNumber": 2}),
                 json!({"name": "EpisodeSearch", "episodeIds": [18]}),
             ]
+        );
+        Ok(())
+    }
+
+    // Series with a matching exclusion tag is skipped without any searches
+    #[tokio::test]
+    #[test_log::test]
+    async fn exclude_tag_skips_series() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_tag(1, "no-prefetch");
+        let mut series = default_series();
+        series["tags"] = json!([1]);
+        fake.add_series(series);
+        fake.add_episodes(default_episodes());
+
+        actor_with_tag(&fake, 2, true, Some("no-prefetch".to_string()))
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 7,
+                season: 1,
+                ..np_default()
+            })
+            .await?;
+
+        assert!(!fake.series_state(1234)["monitored"].as_bool().unwrap());
+        assert!(fake.commands().is_empty());
+        Ok(())
+    }
+
+    // Series without the exclusion tag is processed normally
+    #[tokio::test]
+    #[test_log::test]
+    async fn exclude_tag_allows_untagged_series() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_tag(1, "no-prefetch");
+        fake.add_series(default_series());
+        fake.add_episodes(default_episodes());
+
+        actor_with_tag(&fake, 1, true, Some("no-prefetch".to_string()))
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 7,
+                season: 1,
+                ..np_default()
+            })
+            .await?;
+
+        assert!(!fake.commands().is_empty());
+        Ok(())
+    }
+
+    // Unresolved exclusion tag label does not exclude any series
+    #[tokio::test]
+    #[test_log::test]
+    async fn exclude_tag_unresolved() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        let mut series = default_series();
+        series["tags"] = json!([1]);
+        fake.add_series(series);
+        fake.add_episodes(default_episodes());
+
+        actor_with_tag(&fake, 1, true, Some("no-prefetch".to_string()))
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 7,
+                season: 1,
+                ..np_default()
+            })
+            .await?;
+
+        assert!(!fake.commands().is_empty());
+        Ok(())
+    }
+
+    // Duplicate NowPlaying for s01e07 is skipped on second prefetch call
+    #[tokio::test]
+    #[test_log::test]
+    async fn deduplicate() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        fake.add_episodes(default_episodes());
+
+        let np = NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+            ..np_default()
+        };
+
+        let mut actor = actor(&fake, 1, true);
+        actor.prefetch(np.clone()).await?;
+        actor.prefetch(np).await?;
+
+        assert_eq!(
+            fake.commands(),
+            vec![json!({"name": "SeasonSearch", "seriesId": 1234, "seasonNumber": 1})],
+        );
+        Ok(())
+    }
+
+    // Series can be found by TVDB ID instead of title
+    #[tokio::test]
+    #[test_log::test]
+    async fn find_series_by_tvdb_id() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        fake.add_episodes(default_episodes());
+
+        actor(&fake, 1, true)
+            .prefetch(NowPlaying {
+                series: Series::Tvdb(5678),
+                episode: 7,
+                season: 1,
+                ..np_default()
+            })
+            .await?;
+
+        assert!(!fake.commands().is_empty());
+        Ok(())
+    }
+
+    // Prefetching a series not in Sonarr returns an error
+    #[tokio::test]
+    #[test_log::test]
+    async fn series_not_found() {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+
+        let result = actor(&fake, 1, true)
+            .prefetch(NowPlaying {
+                series: Series::Title("Unknown".to_string()),
+                episode: 1,
+                season: 1,
+                ..np_default()
+            })
+            .await;
+
+        assert!(result.is_err());
+    }
+
+    // s01e08 already has a file so only s02e01 is searched
+    #[tokio::test]
+    #[test_log::test]
+    async fn skip_downloaded_episodes() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        let mut eps = default_episodes();
+        // Mark s01e08 as already downloaded
+        eps[7]["hasFile"] = true.into();
+        fake.add_episodes(eps);
+
+        actor(&fake, 2, false)
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 7,
+                season: 1,
+                ..np_default()
+            })
+            .await?;
+
+        // s01e08 has_file=true so only s02e01 is searched
+        assert_eq!(
+            fake.commands(),
+            vec![json!({"name": "EpisodeSearch", "episodeIds": [21]})]
         );
         Ok(())
     }

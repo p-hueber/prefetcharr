@@ -160,7 +160,9 @@ mod test {
 
     use futures::StreamExt as _;
 
-    use crate::media_server::{Client, NowPlaying, Series, plex, test::np_default};
+    use crate::media_server::{
+        Client, NowPlaying, ProvideNowPlaying, Series, plex, test::np_default,
+    };
 
     fn episode() -> serde_json::Value {
         serde_json::json!(
@@ -359,6 +361,43 @@ mod test {
 
         sessions_mock.assert_async().await;
         series_mock.assert_calls_async(0).await;
+
+        Ok(())
+    }
+
+    // A session with all required fields but a non-episode type is rejected by extract
+    #[tokio::test]
+    async fn extract_rejects_non_episode() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/status/sessions");
+                then.json_body(serde_json::json!(
+                    {
+                        "MediaContainer": {
+                            "Metadata": [{
+                                "grandparentTitle": "Some Movie",
+                                "grandparentKey": "path/to/series",
+                                "index": 0,
+                                "parentIndex": 0,
+                                "type": "movie",
+                                "User": {
+                                    "id": "08ba1929-681e-4b24-929b-9245852f65c0",
+                                    "title": "user",
+                                    "thumb": "ignore"
+                                },
+                                "librarySectionTitle": "Movies"
+                            }]
+                        }
+                    }
+                ));
+            })
+            .await;
+
+        let client = plex::Client::new(&server.url("/pathprefix"), "secret")?;
+        let session = client.sessions().await?.into_iter().next().unwrap();
+        assert!(client.extract(session).await.is_err());
 
         Ok(())
     }

@@ -259,7 +259,9 @@ mod test {
 
     use futures::StreamExt;
 
-    use crate::media_server::{Client, NowPlaying, Series, embyfin, test::np_default};
+    use crate::media_server::{
+        Client, NowPlaying, ProvideNowPlaying, Series, embyfin, test::np_default,
+    };
 
     fn episode() -> serde_json::Value {
         serde_json::json!(
@@ -694,6 +696,32 @@ mod test {
         let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
 
         let _ = np_updates.next().await;
+        sessions_mock.assert_async().await;
+
+        Ok(())
+    }
+
+    // An empty sessions array yields no NowPlaying events
+    #[tokio::test]
+    async fn empty_sessions() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let sessions_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Sessions");
+                then.json_body(serde_json::json!([]));
+            })
+            .await;
+
+        let client = embyfin::Client::new(
+            &server.url("/pathprefix"),
+            "secret",
+            embyfin::Fork::Jellyfin,
+        )?;
+
+        let sessions = client.sessions().await?;
+        assert!(sessions.is_empty());
+
         sessions_mock.assert_async().await;
 
         Ok(())
