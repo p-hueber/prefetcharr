@@ -5,6 +5,7 @@ use std::{
     fs::read_to_string,
     io::{IsTerminal, stderr},
     path::PathBuf,
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 
@@ -155,36 +156,59 @@ async fn run(config: Config) -> anyhow::Result<()> {
 
     info!("Start watching {} sessions", config.media_server.r#type);
     let interval = Duration::from_secs(config.interval);
-    let client: Box<dyn media_server::Client> = match config.media_server.r#type {
+    let (client, queue): (
+        Arc<dyn media_server::Client>,
+        Option<Arc<dyn media_server::Queue + Send + Sync>>,
+    ) = match config.media_server.r#type {
         MediaServer::Emby | MediaServer::Jellyfin => {
-            let client = embyfin::Client::new(
-                &config.media_server.url,
-                &config.media_server.api_key,
-                config.media_server.r#type.try_into()?,
-            )
-            .context("Invalid connection parameters")?;
-            Box::new(client)
+            let c = Arc::new(
+                embyfin::Client::new(
+                    &config.media_server.url,
+                    &config.media_server.api_key,
+                    config.media_server.r#type.try_into()?,
+                )
+                .context("Invalid connection parameters")?,
+            );
+            let queue: Option<Arc<dyn media_server::Queue + Send + Sync>> = config
+                .append_to_queue
+                .then(|| c.clone() as Arc<dyn media_server::Queue + Send + Sync>);
+            (c as Arc<dyn media_server::Client>, queue)
         }
         MediaServer::Plex => {
-            let client = plex::Client::new(&config.media_server.url, &config.media_server.api_key)
-                .context("Invalid connection parameters")?;
-            Box::new(client)
+            let c = Arc::new(
+                plex::Client::new(&config.media_server.url, &config.media_server.api_key)
+                    .context("Invalid connection parameters")?,
+            );
+            let queue: Option<Arc<dyn media_server::Queue + Send + Sync>> = config
+                .append_to_queue
+                .then(|| c.clone() as Arc<dyn media_server::Queue + Send + Sync>);
+            (c as Arc<dyn media_server::Client>, queue)
         }
         MediaServer::Tautulli => {
-            let client = media_server::tautulli::Client::new(
-                &config.media_server.url,
-                &config.media_server.api_key,
-            )
-            .context("Invalid connection parameters")?;
-            Box::new(client)
+            let c = Arc::new(
+                media_server::tautulli::Client::new(
+                    &config.media_server.url,
+                    &config.media_server.api_key,
+                )
+                .context("Invalid connection parameters")?,
+            );
+            if config.append_to_queue {
+                warn!(
+                    "append_to_queue is not supported with Tautulli (read-only). \
+                     The feature will be a no-op for this backend."
+                );
+            }
+            (c as Arc<dyn media_server::Client>, None)
         }
     };
 
     client.probe_with_retry(config.connection_retries).await?;
 
+    let has_pending = Arc::new(AtomicBool::new(false));
+    let pending_ttl = interval.saturating_mul(2) + Duration::from_secs(60);
     let sink = PollSender::new(tx);
     let np_updates = client
-        .now_playing_updates(interval)
+        .now_playing_updates(interval, has_pending.clone())
         .inspect_err(|err| error!("Cannot fetch sessions from media server: {err}"))
         .filter_map(async |res| res.ok()) // remove errors
         .filter(filter::users(config.media_server.users.as_slice()))
@@ -201,9 +225,12 @@ async fn run(config: Config) -> anyhow::Result<()> {
         config.prefetch_num,
         config.request_seasons,
         config.sonarr.exclude_tag,
+        queue,
+        has_pending,
+        pending_ttl,
     );
 
-    let _ = tokio::join!(np_updates, actor.process());
+    let _ = tokio::join!(np_updates, actor.process(), client.run());
 
     Ok(())
 }

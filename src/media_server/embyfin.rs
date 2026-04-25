@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, anyhow};
 use futures::{
@@ -13,6 +13,7 @@ use reqwest::{
 use rustls_platform_verifier::ConfigVerifierExt;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
+use tracing::{debug, info};
 
 use crate::MediaServer;
 
@@ -221,12 +222,19 @@ impl super::ProvideNowPlaying for Client {
             folder.map(|f| f.name)
         };
 
+        let session_id = session
+            .other
+            .get("Id")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+
         let now_playing = NowPlaying {
             series,
             episode: episode_num,
             season: season_num,
             user,
             library,
+            session_id,
         };
 
         Ok(now_playing)
@@ -253,14 +261,162 @@ impl super::Client for Client {
     }
 }
 
+impl super::Queue for Client {
+    fn append(
+        &self,
+        np: &NowPlaying,
+        episodes: &[(i32, i32)],
+    ) -> BoxFuture<'_, Result<HashSet<(i32, i32)>>> {
+        let np = np.clone();
+        let episodes = episodes.to_vec();
+        async move {
+            let session_id = np
+                .session_id
+                .as_deref()
+                .ok_or_else(|| anyhow!("session_id missing"))?;
+
+            let raw_sessions: Vec<Value> = self.get("Sessions").await?;
+            let session = raw_sessions
+                .into_iter()
+                .find(|s| s.get("Id").and_then(Value::as_str) == Some(session_id))
+                .ok_or_else(|| anyhow!("session {session_id} no longer exists"))?;
+
+            let series_id = session
+                .get("NowPlayingItem")
+                .and_then(|i| i.get("SeriesId"))
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("session has no SeriesId"))?
+                .to_string();
+            let user_id = session
+                .get("UserId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| anyhow!("session has no UserId"))?
+                .to_string();
+
+            let existing: HashSet<String> = session
+                .get("NowPlayingQueue")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|i| i.get("Id").and_then(Value::as_str).map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let episode_map = self.list_series_episodes(&series_id, &user_id).await?;
+
+            let mut success: HashSet<(i32, i32)> = HashSet::new();
+            let mut to_post: Vec<((i32, i32), String)> = Vec::new();
+            // Episodes arrive in playback order; stop at the first gap
+            // (episode not yet in the library) so we never enqueue an episode
+            // whose predecessor is still missing.
+            for &(s, e) in &episodes {
+                let Some(item_id) = episode_map.get(&(s, e)) else {
+                    debug!(season = s, episode = e, "episode not yet in library; stop");
+                    break;
+                };
+                if existing.contains(item_id) {
+                    debug!(season = s, episode = e, "episode already in queue");
+                    success.insert((s, e));
+                } else {
+                    to_post.push(((s, e), item_id.clone()));
+                }
+            }
+
+            if !to_post.is_empty() {
+                let item_ids = to_post
+                    .iter()
+                    .map(|(_, id)| id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let mut url = self.base_url.clone();
+                url.path_segments_mut()
+                    .map_err(|()| anyhow!("url is relative"))?
+                    .extend(["Sessions", session_id, "Playing"]);
+                url.query_pairs_mut()
+                    .append_pair("playCommand", "PlayLast")
+                    .append_pair("itemIds", &item_ids);
+                self.http
+                    .post(url)
+                    .send()
+                    .await?
+                    .error_for_status()
+                    .context("POST /Sessions/{}/Playing failed")?;
+                let labels: Vec<String> = to_post
+                    .iter()
+                    .map(|((s, e), _)| format!("s{s:02}e{e:02}"))
+                    .collect();
+                info!(episodes = ?labels, "appended to play queue");
+                for (pair, _) in to_post {
+                    success.insert(pair);
+                }
+            }
+
+            Ok(success)
+        }
+        .boxed()
+    }
+}
+
+impl Client {
+    async fn list_series_episodes(
+        &self,
+        series_id: &str,
+        user_id: &str,
+    ) -> Result<HashMap<(i32, i32), String>> {
+        let mut url = self.base_url.clone();
+        url.path_segments_mut()
+            .map_err(|()| anyhow!("url is relative"))?
+            .extend(["Shows", series_id, "Episodes"]);
+        url.query_pairs_mut()
+            .append_pair("userId", user_id)
+            .append_pair("fields", "ParentIndexNumber,IndexNumber");
+
+        let response: Value = self
+            .http
+            .get(url)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+
+        let items = response
+            .get("Items")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+
+        let mut map = HashMap::new();
+        for item in items {
+            let season = item
+                .get("ParentIndexNumber")
+                .and_then(Value::as_i64)
+                .and_then(|x| i32::try_from(x).ok());
+            let episode = item
+                .get("IndexNumber")
+                .and_then(Value::as_i64)
+                .and_then(|x| i32::try_from(x).ok());
+            let id = item.get("Id").and_then(Value::as_str).map(String::from);
+            if let (Some(s), Some(e), Some(id)) = (season, episode, id) {
+                map.insert((s, e), id);
+            }
+        }
+        Ok(map)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::time::{Duration, Instant};
 
     use futures::StreamExt;
 
+    use std::collections::HashSet;
+
     use crate::media_server::{
-        Client, NowPlaying, ProvideNowPlaying, Series, embyfin, test::np_default,
+        Client, NowPlaying, ProvideNowPlaying, Queue, Series, embyfin,
+        test::{idle_pending, np_default},
     };
 
     fn episode() -> serde_json::Value {
@@ -401,7 +557,7 @@ mod test {
             embyfin::Fork::Jellyfin,
         )?;
 
-        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100), idle_pending());
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
             library: Some("TV Shows".to_string()),
@@ -479,7 +635,7 @@ mod test {
             embyfin::Fork::Jellyfin,
         )?;
 
-        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100), idle_pending());
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = np_default();
 
@@ -531,7 +687,7 @@ mod test {
         let client =
             embyfin::Client::new(&server.url("/pathprefix"), "secret", embyfin::Fork::Emby)?;
 
-        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100), idle_pending());
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
             series: Series::Title("Test Show".to_string()),
@@ -592,7 +748,7 @@ mod test {
             embyfin::Fork::Jellyfin,
         )?;
 
-        let mut np_updates = client.now_playing_updates(Duration::from_millis(100));
+        let mut np_updates = client.now_playing_updates(Duration::from_millis(100), idle_pending());
 
         let start = Instant::now();
         let _ = np_updates.next().await;
@@ -648,7 +804,7 @@ mod test {
             embyfin::Fork::Jellyfin,
         )?;
 
-        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100), idle_pending());
 
         let _ = np_updates.next().await;
         sessions_mock.assert_async().await;
@@ -693,11 +849,237 @@ mod test {
         let client =
             embyfin::Client::new(&server.url("/pathprefix"), "secret", embyfin::Fork::Emby)?;
 
-        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100), idle_pending());
 
         let _ = np_updates.next().await;
         sessions_mock.assert_async().await;
 
+        Ok(())
+    }
+
+    fn sessions_with_queue(queue: &serde_json::Value) -> serde_json::Value {
+        serde_json::json!([{
+            "Id": "session-1",
+            "UserId": "user-1",
+            "UserName": "user",
+            "NowPlayingItem": {
+                "SeriesId": "series-1",
+                "SeasonId": "b",
+                "IndexNumber": 1,
+                "Path": "/x"
+            },
+            "NowPlayingQueue": queue
+        }])
+    }
+
+    fn show_episodes() -> serde_json::Value {
+        serde_json::json!({
+            "Items": [
+                {"Id": "ep-1-1", "ParentIndexNumber": 1, "IndexNumber": 1},
+                {"Id": "ep-1-2", "ParentIndexNumber": 1, "IndexNumber": 2},
+                {"Id": "ep-1-3", "ParentIndexNumber": 1, "IndexNumber": 3}
+            ]
+        })
+    }
+
+    // Queue::append issues a single PlayLast POST with comma-joined item IDs
+    #[tokio::test]
+    async fn queue_append_success() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let sessions_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Sessions");
+                then.json_body(sessions_with_queue(&serde_json::json!([
+                    {"Id": "ep-1-1", "PlaylistItemId": "pi-1"}
+                ])));
+            })
+            .await;
+
+        let episodes_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Shows/series-1/Episodes");
+                then.json_body(show_episodes());
+            })
+            .await;
+
+        let post_mock = server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::POST)
+                    .path("/pathprefix/Sessions/session-1/Playing")
+                    .query_param("playCommand", "PlayLast")
+                    .query_param("itemIds", "ep-1-2,ep-1-3");
+                then.status(204);
+            })
+            .await;
+
+        let client = embyfin::Client::new(
+            &server.url("/pathprefix"),
+            "secret",
+            embyfin::Fork::Jellyfin,
+        )?;
+        let np = NowPlaying {
+            series: Series::Tvdb(1234),
+            session_id: Some("session-1".into()),
+            ..np_default()
+        };
+        let result = Queue::append(&client, &np, &[(1, 2), (1, 3)]).await?;
+
+        let expected: HashSet<(i32, i32)> = [(1, 2), (1, 3)].into_iter().collect();
+        assert_eq!(result, expected);
+
+        sessions_mock.assert_async().await;
+        episodes_mock.assert_async().await;
+        post_mock.assert_async().await;
+        Ok(())
+    }
+
+    // Episodes already in the player's NowPlayingQueue are reported as success
+    // without issuing the POST
+    #[tokio::test]
+    async fn queue_append_dedup_existing() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let _sessions_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Sessions");
+                then.json_body(sessions_with_queue(&serde_json::json!([
+                    {"Id": "ep-1-1"},
+                    {"Id": "ep-1-2"}
+                ])));
+            })
+            .await;
+
+        let _episodes_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Shows/series-1/Episodes");
+                then.json_body(show_episodes());
+            })
+            .await;
+
+        let post_mock = server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::POST)
+                    .path("/pathprefix/Sessions/session-1/Playing")
+                    .query_param("itemIds", "ep-1-3");
+                then.status(204);
+            })
+            .await;
+
+        let client = embyfin::Client::new(
+            &server.url("/pathprefix"),
+            "secret",
+            embyfin::Fork::Jellyfin,
+        )?;
+        let np = NowPlaying {
+            session_id: Some("session-1".into()),
+            ..np_default()
+        };
+        let result = Queue::append(&client, &np, &[(1, 2), (1, 3)]).await?;
+
+        let expected: HashSet<(i32, i32)> = [(1, 2), (1, 3)].into_iter().collect();
+        assert_eq!(result, expected);
+
+        post_mock.assert_async().await;
+        Ok(())
+    }
+
+    // A trailing episode missing from the library stops the append; earlier
+    // pairs in playback order still go through.
+    #[tokio::test]
+    async fn queue_append_episode_missing() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let _sessions_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Sessions");
+                then.json_body(sessions_with_queue(&serde_json::json!([])));
+            })
+            .await;
+
+        let _episodes_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Shows/series-1/Episodes");
+                then.json_body(serde_json::json!({
+                    "Items": [
+                        {"Id": "ep-1-2", "ParentIndexNumber": 1, "IndexNumber": 2}
+                    ]
+                }));
+            })
+            .await;
+
+        let post_mock = server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::POST)
+                    .path("/pathprefix/Sessions/session-1/Playing")
+                    .query_param("itemIds", "ep-1-2");
+                then.status(204);
+            })
+            .await;
+
+        let client = embyfin::Client::new(
+            &server.url("/pathprefix"),
+            "secret",
+            embyfin::Fork::Jellyfin,
+        )?;
+        let np = NowPlaying {
+            session_id: Some("session-1".into()),
+            ..np_default()
+        };
+        let result = Queue::append(&client, &np, &[(1, 2), (1, 3)]).await?;
+
+        let expected: HashSet<(i32, i32)> = [(1, 2)].into_iter().collect();
+        assert_eq!(result, expected);
+
+        post_mock.assert_async().await;
+        Ok(())
+    }
+
+    // If the first episode in playback order is missing from the library, no
+    // append is issued at all — we never want to skip ahead.
+    #[tokio::test]
+    async fn queue_append_stops_at_leading_gap() -> Result<(), Box<dyn std::error::Error>> {
+        let server = httpmock::MockServer::start_async().await;
+
+        let _sessions_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Sessions");
+                then.json_body(sessions_with_queue(&serde_json::json!([])));
+            })
+            .await;
+
+        let _episodes_mock = server
+            .mock_async(|when, then| {
+                when.path("/pathprefix/Shows/series-1/Episodes");
+                then.json_body(serde_json::json!({
+                    "Items": [
+                        {"Id": "ep-1-3", "ParentIndexNumber": 1, "IndexNumber": 3}
+                    ]
+                }));
+            })
+            .await;
+
+        let post_mock = server
+            .mock_async(|when, then| {
+                when.method(httpmock::Method::POST)
+                    .path("/pathprefix/Sessions/session-1/Playing");
+                then.status(204);
+            })
+            .await;
+
+        let client = embyfin::Client::new(
+            &server.url("/pathprefix"),
+            "secret",
+            embyfin::Fork::Jellyfin,
+        )?;
+        let np = NowPlaying {
+            session_id: Some("session-1".into()),
+            ..np_default()
+        };
+        let result = Queue::append(&client, &np, &[(1, 2), (1, 3)]).await?;
+
+        assert!(result.is_empty());
+        post_mock.assert_calls_async(0).await;
         Ok(())
     }
 

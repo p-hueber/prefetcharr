@@ -1,33 +1,56 @@
-use std::collections::HashSet;
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
 use anyhow::anyhow;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     Message,
-    media_server::{NowPlaying, Series},
+    media_server::{NowPlaying, PrefetchKey, Queue, Series},
     sonarr,
     util::once::Seen,
 };
 
+struct Pending {
+    series: Series,
+    // BTreeSet so iteration is always (season, episode) ascending — the
+    // backend Queue::append impls must receive episodes in playback order.
+    owed: BTreeSet<(i32, i32)>,
+    last_seen: Instant,
+}
+
 pub struct Actor {
     rx: mpsc::Receiver<Message>,
     sonarr_client: sonarr::Client,
-    seen: Seen,
+    seen: Seen<PrefetchKey>,
     prefetch_num: usize,
     request_seasons: bool,
     exclude_tag: Option<sonarr::Tag>,
+    queue: Option<Arc<dyn Queue + Send + Sync>>,
+    pending: HashMap<String, Pending>,
+    has_pending: Arc<AtomicBool>,
+    pending_ttl: Duration,
 }
 
 impl Actor {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         rx: mpsc::Receiver<Message>,
         sonarr_client: sonarr::Client,
-        seen: Seen,
+        seen: Seen<PrefetchKey>,
         prefetch_num: usize,
         request_seasons: bool,
         exclude_tag: Option<String>,
+        queue: Option<Arc<dyn Queue + Send + Sync>>,
+        has_pending: Arc<AtomicBool>,
+        pending_ttl: Duration,
     ) -> Self {
         let exclude_tag = exclude_tag.map(sonarr::Tag::from);
         Self {
@@ -37,31 +60,72 @@ impl Actor {
             prefetch_num,
             request_seasons,
             exclude_tag,
+            queue,
+            pending: HashMap::new(),
+            has_pending,
+            pending_ttl,
         }
     }
 }
 
 impl Actor {
     pub async fn process(&mut self) {
-        while let Some(msg) = self.rx.recv().await {
-            match msg {
-                Message::NowPlaying(np) => {
-                    if let Err(e) = self.prefetch(np).await {
-                        error!(err = ?e, "Failed to process");
+        let mut gc = tokio::time::interval(self.pending_ttl / 4);
+        gc.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                msg = self.rx.recv() => {
+                    match msg {
+                        Some(Message::NowPlaying(np)) => {
+                            if let Err(e) = self.prefetch(np).await {
+                                error!(err = ?e, "Failed to process");
+                            }
+                        }
+                        None => break,
                     }
+                }
+                _ = gc.tick() => {
+                    self.gc_pending();
+                    self.publish_has_pending();
                 }
             }
         }
     }
 
-    async fn prefetch(&mut self, np: NowPlaying) -> anyhow::Result<()> {
-        if !self.seen.once(np.clone()) {
+    pub async fn prefetch(&mut self, np: NowPlaying) -> anyhow::Result<()> {
+        self.refresh_pending(&np);
+
+        let result = self.run_prefetch(&np).await;
+
+        if let Ok(Some(pairs)) = &result
+            && let Some(sid) = np.session_id.clone()
+            && !pairs.is_empty()
+        {
+            let entry = self.pending.entry(sid).or_insert_with(|| Pending {
+                series: np.series.clone(),
+                owed: BTreeSet::new(),
+                last_seen: Instant::now(),
+            });
+            entry.owed.extend(pairs.iter().copied());
+        }
+
+        // Always run flush + GC, even if Sonarr work failed — pending state
+        // is independent of Sonarr success.
+        self.flush_queue(&np).await;
+        self.gc_pending();
+        self.publish_has_pending();
+
+        result.map(|_| ())
+    }
+
+    async fn run_prefetch(&mut self, np: &NowPlaying) -> anyhow::Result<Option<Vec<(i32, i32)>>> {
+        if !self.seen.once(PrefetchKey::from(np)) {
             debug!(now_playing = ?np, "skip previously processed item");
-            return Ok(());
+            return Ok(None);
         }
 
         // find series
-        let mut series = self.find_series(&np).await?;
+        let mut series = self.find_series(np).await?;
 
         info!(title = series.title.clone().unwrap_or_else(|| "?".to_string()), now_playing = ?np);
 
@@ -70,13 +134,13 @@ impl Actor {
             self.sonarr_client.update_tag(exclude_tag).await;
             if let Some(true) = series.is_tagged_with(exclude_tag) {
                 info!("excluded via tag");
-                return Ok(());
+                return Ok(None);
             }
         }
 
         // Season 0 contains specials without any particular order.
         if np.season == 0 {
-            return Ok(());
+            return Ok(None);
         }
 
         // fetch n next episodes
@@ -84,6 +148,11 @@ impl Actor {
             .sonarr_client
             .episode_range(&series, np.season, np.episode, self.prefetch_num)
             .await?;
+
+        let pairs: Vec<(i32, i32)> = episodes
+            .iter()
+            .map(|e| (e.season_number, e.episode_number))
+            .collect();
 
         if episodes.len() < self.prefetch_num {
             info!("Not as many episodes announced, monitor new items instead");
@@ -149,7 +218,64 @@ impl Actor {
                 .await?;
         }
 
-        Ok(())
+        Ok(Some(pairs))
+    }
+
+    fn refresh_pending(&mut self, np: &NowPlaying) {
+        let Some(sid) = np.session_id.as_deref() else {
+            return;
+        };
+        if let Some(p) = self.pending.get_mut(sid) {
+            // If the user switched to a different series within the same
+            // session, drop stale owed pairs — they belong to the previous
+            // show and would never be resolvable in the new context.
+            if p.series != np.series {
+                p.series = np.series.clone();
+                p.owed.clear();
+            }
+            p.last_seen = Instant::now();
+        }
+    }
+
+    async fn flush_queue(&mut self, np: &NowPlaying) {
+        let Some(queue) = self.queue.clone() else {
+            return;
+        };
+        let Some(sid) = np.session_id.as_deref() else {
+            return;
+        };
+        let Some(pending) = self.pending.get(sid) else {
+            return;
+        };
+        if pending.owed.is_empty() {
+            return;
+        }
+        let owed: Vec<(i32, i32)> = pending.owed.iter().copied().collect();
+        match queue.append(np, &owed).await {
+            Ok(success) => {
+                if let Some(entry) = self.pending.get_mut(sid) {
+                    entry.owed.retain(|p| !success.contains(p));
+                    if entry.owed.is_empty() {
+                        self.pending.remove(sid);
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(err = ?e, session_id = sid, "queue append failed");
+            }
+        }
+    }
+
+    fn gc_pending(&mut self) {
+        let now = Instant::now();
+        let ttl = self.pending_ttl;
+        self.pending
+            .retain(|_, p| now.saturating_duration_since(p.last_seen) <= ttl);
+    }
+
+    fn publish_has_pending(&self) {
+        self.has_pending
+            .store(!self.pending.is_empty(), Ordering::Relaxed);
     }
 
     async fn find_series(
@@ -170,14 +296,80 @@ impl Actor {
 
 #[cfg(test)]
 mod test {
+    use std::{
+        collections::HashSet,
+        sync::{Arc, Mutex, atomic::AtomicBool, atomic::Ordering},
+        time::Duration,
+    };
+
+    use futures::{FutureExt, future::BoxFuture};
     use serde_json::json;
     use tokio::sync::mpsc;
 
     use crate::{
         fake_sonarr::{FakeSonarr, make_episode, make_season, make_series},
-        media_server::{NowPlaying, Series, test::np_default},
+        media_server::{NowPlaying, Queue, Series, test::np_default},
         util::once,
     };
+
+    type AppendCall = (String, Vec<(i32, i32)>);
+
+    #[derive(Default)]
+    struct FakeQueue {
+        calls: Mutex<Vec<AppendCall>>,
+        next_success: Mutex<Option<HashSet<(i32, i32)>>>,
+    }
+
+    impl FakeQueue {
+        fn calls(&self) -> Vec<AppendCall> {
+            self.calls.lock().unwrap().clone()
+        }
+
+        fn override_next(&self, success: HashSet<(i32, i32)>) {
+            *self.next_success.lock().unwrap() = Some(success);
+        }
+    }
+
+    impl Queue for FakeQueue {
+        fn append(
+            &self,
+            np: &NowPlaying,
+            episodes: &[(i32, i32)],
+        ) -> BoxFuture<'_, anyhow::Result<HashSet<(i32, i32)>>> {
+            let sid = np.session_id.clone().unwrap_or_default();
+            let pairs: Vec<(i32, i32)> = episodes.to_vec();
+            self.calls.lock().unwrap().push((sid, pairs.clone()));
+            let success = self
+                .next_success
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap_or_else(|| pairs.into_iter().collect());
+            async move { Ok(success) }.boxed()
+        }
+    }
+
+    fn actor_with_queue(
+        fake: &FakeSonarr,
+        prefetch_num: usize,
+        queue: Arc<FakeQueue>,
+        has_pending: Arc<AtomicBool>,
+        pending_ttl: Duration,
+    ) -> super::Actor {
+        let (_tx, rx) = mpsc::channel(1);
+        let sonarr = crate::sonarr::Client::new(fake.url(), "secret").unwrap();
+        super::Actor::new(
+            rx,
+            sonarr,
+            once::Seen::default(),
+            prefetch_num,
+            false,
+            None,
+            Some(queue as Arc<dyn Queue + Send + Sync>),
+            has_pending,
+            pending_ttl,
+        )
+    }
 
     fn default_series() -> serde_json::Value {
         make_series(
@@ -221,6 +413,9 @@ mod test {
             prefetch_num,
             request_seasons,
             exclude_tag,
+            None,
+            Arc::new(AtomicBool::new(false)),
+            Duration::from_secs(3600),
         )
     }
 
@@ -639,6 +834,163 @@ mod test {
             fake.commands(),
             vec![json!({"name": "EpisodeSearch", "episodeIds": [21]})]
         );
+        Ok(())
+    }
+
+    // Queue::append is invoked with the prefetch range when a session_id is
+    // present and the actor has a queue handle
+    #[tokio::test]
+    #[test_log::test]
+    async fn queue_append_called() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        fake.add_episodes(default_episodes());
+
+        let queue = Arc::new(FakeQueue::default());
+        let has_pending = Arc::new(AtomicBool::new(false));
+        let mut actor = actor_with_queue(
+            &fake,
+            2,
+            queue.clone(),
+            has_pending.clone(),
+            Duration::from_secs(3600),
+        );
+
+        actor
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 7,
+                season: 1,
+                session_id: Some("s1".into()),
+                ..np_default()
+            })
+            .await?;
+
+        let calls = queue.calls();
+        assert_eq!(calls.len(), 1);
+        let (sid, pairs) = &calls[0];
+        assert_eq!(sid, "s1");
+        // Episodes must reach the backend in playback order, even across the
+        // season boundary — the player would otherwise watch them out of
+        // sequence.
+        assert_eq!(pairs, &vec![(1, 8), (2, 1)]);
+        // Default fake returns full success → has_pending falls back to false
+        assert!(!has_pending.load(Ordering::Relaxed));
+        Ok(())
+    }
+
+    // Partial success keeps remaining pairs owed; subsequent prefetch calls
+    // for the same session retry only the still-owed subset.
+    #[tokio::test]
+    #[test_log::test]
+    async fn queue_partial_success_retries() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        fake.add_episodes(default_episodes());
+
+        let queue = Arc::new(FakeQueue::default());
+        let has_pending = Arc::new(AtomicBool::new(false));
+        let mut actor = actor_with_queue(
+            &fake,
+            2,
+            queue.clone(),
+            has_pending.clone(),
+            Duration::from_secs(3600),
+        );
+
+        // First call: fake returns only (1, 8) as success.
+        queue.override_next([(1, 8)].into_iter().collect());
+        let np = NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+            session_id: Some("s1".into()),
+            ..np_default()
+        };
+        actor.prefetch(np.clone()).await?;
+        assert!(has_pending.load(Ordering::Relaxed));
+
+        // Second call: fake returns full success — only (2, 1) is retried.
+        actor.prefetch(np).await?;
+        let calls = queue.calls();
+        assert_eq!(calls.len(), 2);
+        let second_pairs: HashSet<(i32, i32)> = calls[1].1.iter().copied().collect();
+        assert_eq!(second_pairs, [(2, 1)].into_iter().collect());
+        assert!(!has_pending.load(Ordering::Relaxed));
+        Ok(())
+    }
+
+    // Stale pending entries are evicted by GC after the TTL elapses, and
+    // has_pending flips back to false.
+    #[tokio::test]
+    #[test_log::test]
+    async fn queue_pending_gc() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        fake.add_episodes(default_episodes());
+
+        let queue = Arc::new(FakeQueue::default());
+        let has_pending = Arc::new(AtomicBool::new(false));
+        let mut actor = actor_with_queue(
+            &fake,
+            2,
+            queue.clone(),
+            has_pending.clone(),
+            Duration::from_millis(50),
+        );
+
+        queue.override_next(HashSet::new());
+        actor
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 7,
+                season: 1,
+                session_id: Some("s1".into()),
+                ..np_default()
+            })
+            .await?;
+        assert!(has_pending.load(Ordering::Relaxed));
+
+        // Wait past TTL, then drive GC by processing a different unrelated event.
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        // process something that doesn't add to pending — just any np without
+        // session_id so the gc still runs.
+        actor
+            .prefetch(NowPlaying {
+                series: Series::Tvdb(99999),
+                episode: 1,
+                season: 1,
+                session_id: None,
+                ..np_default()
+            })
+            .await
+            .ok();
+
+        assert!(!has_pending.load(Ordering::Relaxed));
+        Ok(())
+    }
+
+    // No queue handle → no append calls; pending stays empty
+    #[tokio::test]
+    #[test_log::test]
+    async fn queue_no_op_without_handle() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        fake.add_episodes(default_episodes());
+
+        // Default actor has no queue handle
+        let mut a = actor(&fake, 2, false);
+        a.prefetch(NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+            session_id: Some("s1".into()),
+            ..np_default()
+        })
+        .await?;
+
+        // No has_pending observable here, but no panic either.
+        // The Sonarr search still happened, and that's covered by other tests.
         Ok(())
     }
 }

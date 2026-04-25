@@ -1,11 +1,17 @@
-use std::time::Duration;
+use std::{
+    collections::HashSet,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use futures::{
     FutureExt as _, StreamExt, TryStreamExt as _,
-    future::{BoxFuture, LocalBoxFuture},
+    future::{BoxFuture, LocalBoxFuture, pending},
     stream::{self, BoxStream, LocalBoxStream},
 };
-use tokio::time::MissedTickBehavior;
 use tracing::debug;
 
 use crate::util;
@@ -13,6 +19,8 @@ use crate::util;
 pub mod embyfin;
 pub mod plex;
 pub mod tautulli;
+
+pub const ACTIVE_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Series {
@@ -27,6 +35,30 @@ pub struct NowPlaying {
     pub season: i32,
     pub user: User,
     pub library: Option<String>,
+    pub session_id: Option<String>,
+}
+
+// Identity used for prefetch-side dedup. Excludes `session_id` so the same
+// episode is prefetched at most once across sessions and restarts.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct PrefetchKey {
+    pub series: Series,
+    pub episode: i32,
+    pub season: i32,
+    pub user: User,
+    pub library: Option<String>,
+}
+
+impl From<&NowPlaying> for PrefetchKey {
+    fn from(np: &NowPlaying) -> Self {
+        Self {
+            series: np.series.clone(),
+            episode: np.episode,
+            season: np.season,
+            user: np.user.clone(),
+            library: np.library.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -64,30 +96,68 @@ pub trait ProvideNowPlaying {
     }
 }
 
+pub trait Queue {
+    // Append the requested (season, episode) pairs to the play queue of the
+    // session referenced by `np`. Returns the subset successfully appended or
+    // already present in the queue. A backend-level error (network, auth)
+    // returns `Err`; partial resolution during normal operation returns Ok.
+    fn append(
+        &self,
+        np: &NowPlaying,
+        episodes: &[(i32, i32)],
+    ) -> BoxFuture<'_, anyhow::Result<HashSet<(i32, i32)>>>;
+}
+
 pub trait Client {
     fn now_playing(&self) -> BoxFuture<'_, anyhow::Result<BoxStream<'_, NowPlaying>>>;
 
     fn now_playing_updates(
         &self,
         interval: Duration,
+        has_pending: Arc<AtomicBool>,
     ) -> LocalBoxStream<'_, anyhow::Result<NowPlaying>> {
-        let mut interval = tokio::time::interval(interval);
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        stream::unfold(
+            (self, interval, has_pending, true),
+            async |(slf, interval, has_pending, first)| {
+                if !first {
+                    // `has_pending` is set by the actor task *after* it
+                    // processes a NowPlaying message, so checking it once
+                    // up-front races: at the moment the previous iteration's
+                    // emit returns, the actor likely hasn't yet flipped the
+                    // flag. Sleep in `ACTIVE_POLL_INTERVAL` chunks instead and
+                    // re-check after each chunk so a flip mid-wait shortens
+                    // the wait to at most one chunk.
+                    let deadline = tokio::time::Instant::now() + interval;
+                    loop {
+                        let remaining =
+                            deadline.saturating_duration_since(tokio::time::Instant::now());
+                        let chunk = remaining.min(ACTIVE_POLL_INTERVAL);
+                        if chunk.is_zero() {
+                            break;
+                        }
+                        tokio::time::sleep(chunk).await;
+                        if has_pending.load(Ordering::Relaxed) {
+                            break;
+                        }
+                    }
+                }
 
-        stream::unfold((self, interval), async |(slf, mut interval)| {
-            interval.tick().await;
-
-            let item = match slf.now_playing().await {
-                Ok(np_stream) => Ok(np_stream.map(Ok)),
-                Err(err) => Err(err),
-            };
-            Some((item, (slf, interval)))
-        })
+                let item = match slf.now_playing().await {
+                    Ok(np_stream) => Ok(np_stream.map(Ok)),
+                    Err(err) => Err(err),
+                };
+                Some((item, (slf, interval, has_pending, false)))
+            },
+        )
         .try_flatten()
         .boxed_local()
     }
 
     fn probe(&self) -> LocalBoxFuture<'_, anyhow::Result<()>>;
+
+    fn run(&self) -> BoxFuture<'_, ()> {
+        pending().boxed()
+    }
 
     fn probe_with_retry(&self, retries: usize) -> LocalBoxFuture<'_, anyhow::Result<()>> {
         util::retry(retries, || self.probe()).boxed_local()
@@ -127,7 +197,12 @@ pub mod test {
                 id: "08ba1929-681e-4b24-929b-9245852f65c0".to_string(),
             },
             library: None,
+            session_id: None,
         }
+    }
+
+    pub fn idle_pending() -> Arc<AtomicBool> {
+        Arc::new(AtomicBool::new(false))
     }
 
     fn now_playing() -> Vec<NowPlaying> {
@@ -183,7 +258,7 @@ pub mod test {
     #[tokio::test]
     async fn now_playing_first_instant() {
         let client = Mock::new();
-        let mut np_updates = client.now_playing_updates(Duration::from_secs(3600));
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(3600), idle_pending());
         let expect = now_playing();
         let np: Vec<NowPlaying> = np_updates
             .as_mut()
@@ -202,7 +277,7 @@ pub mod test {
     async fn now_playing_second_instant() {
         let client = Mock::new();
         let interval = Duration::from_millis(100);
-        let np_updates = client.now_playing_updates(interval);
+        let np_updates = client.now_playing_updates(interval, idle_pending());
         let expect = now_playing();
         let earlier = Instant::now();
         let np: Vec<NowPlaying> = np_updates
@@ -223,7 +298,7 @@ pub mod test {
             bad_call: false,
         };
         let interval = Duration::from_millis(100);
-        let np_updates = client.now_playing_updates(interval);
+        let np_updates = client.now_playing_updates(interval, idle_pending());
         let expect = now_playing();
         let earlier = Instant::now();
         let np: Vec<NowPlaying> = np_updates
@@ -244,7 +319,7 @@ pub mod test {
             bad_call: true,
         };
         let interval = Duration::from_millis(100);
-        let np_updates = client.now_playing_updates(interval);
+        let np_updates = client.now_playing_updates(interval, idle_pending());
         let earlier = Instant::now();
         assert_eq!(
             np_updates
@@ -255,5 +330,34 @@ pub mod test {
             2
         );
         assert!(Instant::now().duration_since(earlier) >= interval);
+    }
+
+    // `has_pending` flipping after the polling loop entered its sleep must
+    // shorten the wait. Without the chunked recheck, the poller would sleep
+    // the full `interval` because the flag is read once up-front.
+    #[tokio::test(start_paused = true)]
+    async fn fast_poll_when_pending_flips_during_sleep() {
+        let client = Mock::new();
+        let interval = Duration::from_secs(900);
+        let pending = Arc::new(AtomicBool::new(false));
+        let mut np_updates = client.now_playing_updates(interval, pending.clone());
+
+        for _ in 0..now_playing().len() {
+            np_updates.next().await.unwrap().unwrap();
+        }
+
+        let p = pending.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            p.store(true, Ordering::Relaxed);
+        });
+
+        let start = tokio::time::Instant::now();
+        np_updates.next().await.unwrap().unwrap();
+        let elapsed = tokio::time::Instant::now().duration_since(start);
+        assert!(
+            elapsed <= ACTIVE_POLL_INTERVAL,
+            "elapsed {elapsed:?}, expected ≤ {ACTIVE_POLL_INTERVAL:?}",
+        );
     }
 }
