@@ -48,6 +48,7 @@ mod test {
                 id: String::new(),
             },
             library: None,
+            session_id: None,
         }
     }
 

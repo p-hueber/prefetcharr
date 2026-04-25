@@ -67,6 +67,9 @@ pub struct Config {
     pub request_seasons: bool,
     /// Number of retries for the initial connection probing
     pub connection_retries: usize,
+    /// Append upcoming episodes to the active player queue
+    #[serde(default)]
+    pub append_to_queue: bool,
     #[serde(default)]
     pub legacy: bool,
 }
@@ -108,6 +111,7 @@ impl From<LegacyArgs> for Config {
             prefetch_num: remaining_episodes.into(),
             request_seasons: true,
             connection_retries,
+            append_to_queue: false,
             legacy: true,
         }
     }

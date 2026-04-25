@@ -1,19 +1,23 @@
 use std::{
     collections::HashMap,
+    hash::Hash,
     time::{Duration, Instant},
 };
 
-use crate::media_server::NowPlaying;
-
 const RETAIN_DURATION: Duration = Duration::from_secs(60 * 60 * 24 * 7);
 
-#[derive(Default)]
-pub struct Seen(HashMap<NowPlaying, Instant>);
+pub struct Seen<K: Eq + Hash>(HashMap<K, Instant>);
 
-impl Seen {
-    pub fn once(&mut self, np: NowPlaying) -> bool {
+impl<K: Eq + Hash> Default for Seen<K> {
+    fn default() -> Self {
+        Self(HashMap::new())
+    }
+}
+
+impl<K: Eq + Hash> Seen<K> {
+    pub fn once(&mut self, key: K) -> bool {
         self.prune();
-        self.0.insert(np, Instant::now()).is_none()
+        self.0.insert(key, Instant::now()).is_none()
     }
 
     fn prune(&mut self) {
@@ -31,6 +35,8 @@ mod test {
         util::once::Seen,
     };
 
+    type SeenNp = Seen<NowPlaying>;
+
     fn now_playing() -> NowPlaying {
         let series = Series::Tvdb(1);
         let season = 3;
@@ -47,13 +53,14 @@ mod test {
             season,
             user,
             library,
+            session_id: None,
         }
     }
 
     // Same NowPlaying is accepted once and rejected on second attempt
     #[test]
     fn twice() {
-        let mut seen = Seen::default();
+        let mut seen = SeenNp::default();
         let np = now_playing();
         assert!(seen.once(np.clone()));
         assert!(!seen.once(np));
@@ -62,7 +69,7 @@ mod test {
     // Entries older than the retention period are pruned and accepted again
     #[test]
     fn prune_old() {
-        let mut seen = Seen::default();
+        let mut seen = SeenNp::default();
         let np = now_playing();
         let touched = Instant::now().checked_sub(super::RETAIN_DURATION).unwrap();
 
@@ -73,7 +80,7 @@ mod test {
     // Entries within the retention period are still rejected as duplicates
     #[test]
     fn touch() {
-        let mut seen = Seen::default();
+        let mut seen = SeenNp::default();
         let np = now_playing();
 
         // let mut old = Entry::new(series.clone(), season);
@@ -91,7 +98,7 @@ mod test {
     // Different seasons of the same series are tracked independently
     #[test]
     fn different_season() {
-        let mut seen = Seen::default();
+        let mut seen = SeenNp::default();
         let np_a = now_playing();
         let np_b = {
             let mut np = now_playing();

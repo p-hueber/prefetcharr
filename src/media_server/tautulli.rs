@@ -159,6 +159,7 @@ impl ProvideNowPlaying for Client {
             season,
             user,
             library,
+            session_id: None,
         })
     }
 }
@@ -184,8 +185,9 @@ mod test {
     use futures::StreamExt as _;
 
     use crate::media_server::{
-        Client, NowPlaying, ProvideNowPlaying, Series, tautulli, tautulli::Episode,
-        test::np_default,
+        Client, NowPlaying, ProvideNowPlaying, Series, tautulli,
+        tautulli::Episode,
+        test::{idle_pending, np_default},
     };
     #[allow(clippy::unreadable_literal)]
     fn episode() -> serde_json::Value {
@@ -257,6 +259,7 @@ mod test {
                     name: "user".into(),
                     id: "29344801".into(),
                 },
+                session_id: None,
             }
         );
 
@@ -316,7 +319,7 @@ mod test {
 
         let client = tautulli::Client::new(&server.url("/pathprefix"), "secret")?;
 
-        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100), idle_pending());
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
             library: Some("TV Shows".into()),
@@ -376,7 +379,7 @@ mod test {
 
         let client = tautulli::Client::new(&server.url("/pathprefix"), "secret")?;
 
-        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100), idle_pending());
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
             library: Some("TV Shows".into()),
@@ -426,7 +429,7 @@ mod test {
 
         let client = tautulli::Client::new(&server.url("/pathprefix"), "secret")?;
 
-        let mut np_updates = client.now_playing_updates(Duration::from_secs(100));
+        let mut np_updates = client.now_playing_updates(Duration::from_secs(100), idle_pending());
         let message = np_updates.next().await.transpose().unwrap();
         let message_expect = NowPlaying {
             series: Series::Title("Test Show".to_string()),
