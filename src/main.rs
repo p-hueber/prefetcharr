@@ -236,9 +236,13 @@ async fn run(config: Config) -> anyhow::Result<()> {
 }
 
 fn enable_logging(log_dir: Option<&PathBuf>, level: Option<config::LogLevel>) {
+    // SubscriberBuilder defaults to a baked-in INFO max-level cap; without
+    // this override, a Targets/EnvFilter that allows DEBUG would still be
+    // gated by the inner cap and DEBUG events would never reach the writer.
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(stderr().is_terminal())
         .with_writer(stderr)
+        .with_max_level(tracing_subscriber::filter::LevelFilter::TRACE)
         .finish();
 
     let filter = if let Some(level) = level {

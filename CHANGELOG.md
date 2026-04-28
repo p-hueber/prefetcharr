@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client and Plex; behavior on Jellyfin Android TV and native Emby clients
   has not been verified at the source level.
 
+### Fixed
+
+- `log_level` settings below `Info` (`Debug`, `Trace`) are now honored. The
+  `tracing` formatter's built-in `Info` cap was overriding the configured
+  level.
+
 
 ## [1.5.0] - 2026-04-03
 
