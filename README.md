@@ -38,7 +38,8 @@ services:
         log_level = "Debug"      # `Trace`, `Debug`, `Info`, `Warn` or `Error`
         prefetch_num = 2         # Number of episodes to make available in advance
         request_seasons = true   # Always request full seasons to prefer season packs
-        append_to_queue = false  # Append upcoming episodes to the player's active queue (Jellyfin/Emby/Plex)
+        append_to_queue = false  # Experimental: Append upcoming episodes to the player's active queue.
+                                 # Not supported by all clients. Not compatible with Tautulli.
         connection_retries = 6   # Number of retries for the initial connection probing
 
         [media_server]
