@@ -7,16 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+
+## [1.6.0] - 2026-04-29
+
 ### Added
 
-- New config option `append_to_queue` (default off). When enabled, prefetcharr
-  appends the upcoming episodes to the player's active play queue on the media
-  server, allowing seamless continuation across season boundaries and into
-  not-yet-downloaded episodes. Supported on Jellyfin, Emby and Plex; Tautulli
-  is read-only and the option is a no-op there. Whether the addition is
-  honored depends on the playback client — confirmed for the Jellyfin web
-  client and Plex; behavior on Jellyfin Android TV and native Emby clients
-  has not been verified at the source level.
+- New experimental config option `append_to_queue` (default off). When enabled,
+  prefetcharr appends the upcoming episodes to the player's active play queue on
+  the media server. Not fully supported by all clients. Not possible with
+  Tautulli.
 
 ### Fixed
 
