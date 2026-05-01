@@ -17,7 +17,7 @@ use tracing::{debug, info};
 
 use crate::MediaServer;
 
-use super::{NowPlaying, ProvideNowPlaying};
+use super::{EpisodeRef, NowPlaying, ProvideNowPlaying};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -265,8 +265,8 @@ impl super::Queue for Client {
     fn append(
         &self,
         np: &NowPlaying,
-        episodes: &[(i32, i32)],
-    ) -> BoxFuture<'_, Result<HashSet<(i32, i32)>>> {
+        episodes: &[EpisodeRef],
+    ) -> BoxFuture<'_, Result<HashSet<EpisodeRef>>> {
         let np = np.clone();
         let episodes = episodes.to_vec();
         async move {
@@ -305,21 +305,29 @@ impl super::Queue for Client {
 
             let episode_map = self.list_series_episodes(&series_id, &user_id).await?;
 
-            let mut success: HashSet<(i32, i32)> = HashSet::new();
-            let mut to_post: Vec<((i32, i32), String)> = Vec::new();
+            let mut success: HashSet<EpisodeRef> = HashSet::new();
+            let mut to_post: Vec<(EpisodeRef, String)> = Vec::new();
             // Episodes arrive in playback order; stop at the first gap
             // (episode not yet in the library) so we never enqueue an episode
             // whose predecessor is still missing.
-            for &(s, e) in &episodes {
-                let Some(item_id) = episode_map.get(&(s, e)) else {
-                    debug!(season = s, episode = e, "episode not yet in library; stop");
+            for &ep in &episodes {
+                let Some(item_id) = episode_map.get(&ep) else {
+                    debug!(
+                        season = ep.season,
+                        episode = ep.episode,
+                        "episode not yet in library; stop"
+                    );
                     break;
                 };
                 if existing.contains(item_id) {
-                    debug!(season = s, episode = e, "episode already in queue");
-                    success.insert((s, e));
+                    debug!(
+                        season = ep.season,
+                        episode = ep.episode,
+                        "episode already in queue"
+                    );
+                    success.insert(ep);
                 } else {
-                    to_post.push(((s, e), item_id.clone()));
+                    to_post.push((ep, item_id.clone()));
                 }
             }
 
@@ -342,13 +350,10 @@ impl super::Queue for Client {
                     .await?
                     .error_for_status()
                     .context("POST /Sessions/{}/Playing failed")?;
-                let labels: Vec<String> = to_post
-                    .iter()
-                    .map(|((s, e), _)| format!("s{s:02}e{e:02}"))
-                    .collect();
+                let labels: Vec<String> = to_post.iter().map(|(ep, _)| ep.to_string()).collect();
                 info!(episodes = ?labels, "appended to play queue");
-                for (pair, _) in to_post {
-                    success.insert(pair);
+                for (ep, _) in to_post {
+                    success.insert(ep);
                 }
             }
 
@@ -363,7 +368,7 @@ impl Client {
         &self,
         series_id: &str,
         user_id: &str,
-    ) -> Result<HashMap<(i32, i32), String>> {
+    ) -> Result<HashMap<EpisodeRef, String>> {
         let mut url = self.base_url.clone();
         url.path_segments_mut()
             .map_err(|()| anyhow!("url is relative"))?
@@ -399,7 +404,7 @@ impl Client {
                 .and_then(|x| i32::try_from(x).ok());
             let id = item.get("Id").and_then(Value::as_str).map(String::from);
             if let (Some(s), Some(e), Some(id)) = (season, episode, id) {
-                map.insert((s, e), id);
+                map.insert(EpisodeRef::new(s, e), id);
             }
         }
         Ok(map)
@@ -415,7 +420,7 @@ mod test {
     use std::collections::HashSet;
 
     use crate::media_server::{
-        Client, NowPlaying, ProvideNowPlaying, Queue, Series, embyfin,
+        Client, EpisodeRef, NowPlaying, ProvideNowPlaying, Queue, Series, embyfin,
         test::{idle_pending, np_default},
     };
 
@@ -923,9 +928,16 @@ mod test {
             session_id: Some("session-1".into()),
             ..np_default()
         };
-        let result = Queue::append(&client, &np, &[(1, 2), (1, 3)]).await?;
+        let result = Queue::append(
+            &client,
+            &np,
+            &[EpisodeRef::new(1, 2), EpisodeRef::new(1, 3)],
+        )
+        .await?;
 
-        let expected: HashSet<(i32, i32)> = [(1, 2), (1, 3)].into_iter().collect();
+        let expected: HashSet<EpisodeRef> = [EpisodeRef::new(1, 2), EpisodeRef::new(1, 3)]
+            .into_iter()
+            .collect();
         assert_eq!(result, expected);
 
         sessions_mock.assert_async().await;
@@ -975,9 +987,16 @@ mod test {
             session_id: Some("session-1".into()),
             ..np_default()
         };
-        let result = Queue::append(&client, &np, &[(1, 2), (1, 3)]).await?;
+        let result = Queue::append(
+            &client,
+            &np,
+            &[EpisodeRef::new(1, 2), EpisodeRef::new(1, 3)],
+        )
+        .await?;
 
-        let expected: HashSet<(i32, i32)> = [(1, 2), (1, 3)].into_iter().collect();
+        let expected: HashSet<EpisodeRef> = [EpisodeRef::new(1, 2), EpisodeRef::new(1, 3)]
+            .into_iter()
+            .collect();
         assert_eq!(result, expected);
 
         post_mock.assert_async().await;
@@ -1026,9 +1045,14 @@ mod test {
             session_id: Some("session-1".into()),
             ..np_default()
         };
-        let result = Queue::append(&client, &np, &[(1, 2), (1, 3)]).await?;
+        let result = Queue::append(
+            &client,
+            &np,
+            &[EpisodeRef::new(1, 2), EpisodeRef::new(1, 3)],
+        )
+        .await?;
 
-        let expected: HashSet<(i32, i32)> = [(1, 2)].into_iter().collect();
+        let expected: HashSet<EpisodeRef> = [EpisodeRef::new(1, 2)].into_iter().collect();
         assert_eq!(result, expected);
 
         post_mock.assert_async().await;
@@ -1076,7 +1100,12 @@ mod test {
             session_id: Some("session-1".into()),
             ..np_default()
         };
-        let result = Queue::append(&client, &np, &[(1, 2), (1, 3)]).await?;
+        let result = Queue::append(
+            &client,
+            &np,
+            &[EpisodeRef::new(1, 2), EpisodeRef::new(1, 3)],
+        )
+        .await?;
 
         assert!(result.is_empty());
         post_mock.assert_calls_async(0).await;

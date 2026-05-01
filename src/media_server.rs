@@ -28,6 +28,24 @@ pub enum Series {
     Tvdb(i32),
 }
 
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
+pub struct EpisodeRef {
+    pub season: i32,
+    pub episode: i32,
+}
+
+impl EpisodeRef {
+    pub fn new(season: i32, episode: i32) -> Self {
+        Self { season, episode }
+    }
+}
+
+impl std::fmt::Display for EpisodeRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "s{:02}e{:02}", self.season, self.episode)
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct NowPlaying {
     pub series: Series,
@@ -104,8 +122,8 @@ pub trait Queue {
     fn append(
         &self,
         np: &NowPlaying,
-        episodes: &[(i32, i32)],
-    ) -> BoxFuture<'_, anyhow::Result<HashSet<(i32, i32)>>>;
+        episodes: &[EpisodeRef],
+    ) -> BoxFuture<'_, anyhow::Result<HashSet<EpisodeRef>>>;
 }
 
 pub trait Client {
