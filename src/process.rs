@@ -149,11 +149,6 @@ impl Actor {
             .episode_range(&series, np.season, np.episode, self.prefetch_num)
             .await?;
 
-        let pairs: Vec<(i32, i32)> = episodes
-            .iter()
-            .map(|e| (e.season_number, e.episode_number))
-            .collect();
-
         if episodes.len() < self.prefetch_num {
             info!("Not as many episodes announced, monitor new items instead");
             self.sonarr_client
@@ -165,6 +160,10 @@ impl Actor {
         }
 
         let missing_episodes: Vec<_> = episodes.into_iter().filter(|e| !e.has_file).collect();
+        let pairs: Vec<(i32, i32)> = missing_episodes
+            .iter()
+            .map(|e| (e.season_number, e.episode_number))
+            .collect();
         let mut episodes_to_search = Vec::new();
 
         if self.request_seasons {
@@ -876,6 +875,46 @@ mod test {
         assert_eq!(pairs, &vec![(1, 8), (2, 1)]);
         // Default fake returns full success → has_pending falls back to false
         assert!(!has_pending.load(Ordering::Relaxed));
+        Ok(())
+    }
+
+    // Episodes already on disk must not be appended to the play queue —
+    // some clients (e.g. Emby) play a single item and resolve "next up"
+    // locally, so re-enqueueing existing files fights with the client.
+    #[tokio::test]
+    #[test_log::test]
+    async fn queue_skips_episodes_with_file() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        let mut eps = default_episodes();
+        // s01e08 is already in the library
+        eps[7]["hasFile"] = true.into();
+        fake.add_episodes(eps);
+
+        let queue = Arc::new(FakeQueue::default());
+        let has_pending = Arc::new(AtomicBool::new(false));
+        let mut actor = actor_with_queue(
+            &fake,
+            2,
+            queue.clone(),
+            has_pending.clone(),
+            Duration::from_secs(3600),
+        );
+
+        actor
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 7,
+                season: 1,
+                session_id: Some("s1".into()),
+                ..np_default()
+            })
+            .await?;
+
+        let calls = queue.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "s1");
+        assert_eq!(calls[0].1, vec![(2, 1)]);
         Ok(())
     }
 
