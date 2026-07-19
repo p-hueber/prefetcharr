@@ -33,7 +33,7 @@ impl Client {
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
-            .use_preconfigured_tls(rustls::ClientConfig::with_platform_verifier())
+            .tls_backend_preconfigured(rustls::ClientConfig::with_platform_verifier()?)
             .build()?;
 
         let base_url = base_url.parse()?;

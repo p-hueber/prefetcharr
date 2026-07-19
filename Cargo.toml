@@ -12,15 +12,15 @@ rust-version = "1.88.0"
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env", "string"] }
 futures = { version = "0.3.31", default-features = false, features = ["std"] }
-reqwest = { version = "0", default-features = false, features = ["charset", "http2", "json", "rustls-tls"] }
+reqwest = { version = "0", default-features = false, features = ["charset", "http2", "json", "query", "rustls"] }
 rustls = { version = "0.23.23", default-features = false }
-rustls-platform-verifier = "0.5.0"
+rustls-platform-verifier = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread", "time", "sync"] }
-tokio-tungstenite = { version = "0.27", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 tokio-util = "0.7.13"
-toml = "0.8.23"
+toml = "1"
 tracing = "0"
 tracing-appender = "0"
 tracing-subscriber = { version = "0", features = ["env-filter"] }
