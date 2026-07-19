@@ -121,7 +121,7 @@ impl Client {
 
         let http = reqwest::Client::builder()
             .default_headers(headers)
-            .use_preconfigured_tls(rustls::ClientConfig::with_platform_verifier())
+            .tls_backend_preconfigured(rustls::ClientConfig::with_platform_verifier()?)
             .build()?;
 
         Ok(Self {
