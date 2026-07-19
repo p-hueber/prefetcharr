@@ -28,6 +28,7 @@ services:
   prefetcharr:
     image: phueber/prefetcharr:latest
     container_name: prefetcharr
+    user: 1000:1000
     environment:
       - |
         PREFETCHARR_CONFIG=

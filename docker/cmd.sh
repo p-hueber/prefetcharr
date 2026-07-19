@@ -15,9 +15,16 @@ test -z "$PREFETCHARR_CONFIG" -a ! -f /config \
     ${LIBRARIES:+--libraries "${LIBRARIES}"} \
     --connection-retries 6 
 
-test -f /config || sh -c "cat > /config <<EOF
+# Write config to /tmp so any userid would work
+if test -f /config
+then
+  # Some users may still bind to /config
+  cp /config /tmp/config.toml
+else
+  sh -c "cat > /tmp/config.toml <<EOF
 $PREFETCHARR_CONFIG
 EOF"
+fi
 
-exec /prefetcharr --config /config
+exec /prefetcharr --config /tmp/config.toml
 
