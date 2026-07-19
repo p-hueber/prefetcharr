@@ -1237,7 +1237,7 @@ checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
 
 [[package]]
 name = "prefetcharr"
-version = "1.6.1"
+version = "1.6.2"
 dependencies = [
  "anyhow",
  "axum",
