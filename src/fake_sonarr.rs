@@ -123,14 +123,22 @@ pub fn make_season(number: i32, monitored: bool, fully_aired: bool) -> Value {
 }
 
 pub fn make_episode(id: i32, series_id: i32, season: i32, episode: i32, has_file: bool) -> Value {
-    json!({
+    make_episode_with_airdate(id, series_id, season, episode, has_file, None)
+}
+
+pub fn make_episode_with_airdate(id: i32, series_id: i32, season: i32, episode: i32, has_file: bool, air_date: Option<&str>) -> Value {
+    let mut episode = json!({
         "id": id,
         "seriesId": series_id,
         "seasonNumber": season,
         "episodeNumber": episode,
         "hasFile": has_file,
         "monitored": false,
-    })
+    });
+    if let Some(date) = air_date {
+        episode["airDate"] = json!(date);
+    }
+    episode
 }
 
 async fn probe() -> &'static str {

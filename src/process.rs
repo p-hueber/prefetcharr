@@ -33,6 +33,7 @@ pub struct Actor {
     prefetch_num: usize,
     request_seasons: bool,
     exclude_tag: Option<sonarr::Tag>,
+    check_aired: bool,
     queue: Option<Arc<dyn Queue + Send + Sync>>,
     pending: HashMap<String, Pending>,
     has_pending: Arc<AtomicBool>,
@@ -48,6 +49,7 @@ impl Actor {
         prefetch_num: usize,
         request_seasons: bool,
         exclude_tag: Option<String>,
+        check_aired: bool,
         queue: Option<Arc<dyn Queue + Send + Sync>>,
         has_pending: Arc<AtomicBool>,
         pending_ttl: Duration,
@@ -60,6 +62,7 @@ impl Actor {
             prefetch_num,
             request_seasons,
             exclude_tag,
+            check_aired,
             queue,
             pending: HashMap::new(),
             has_pending,
@@ -152,7 +155,7 @@ impl Actor {
         if episodes.len() < self.prefetch_num {
             info!("Not as many episodes announced, monitor new items instead");
             self.sonarr_client
-                .monitor_unannounced_episodes(&mut series)
+                .monitor_unannounced_episodes(&mut series, self.check_aired)
                 .await?;
         } else if !series.monitored {
             series.monitored = true;
@@ -160,6 +163,14 @@ impl Actor {
         }
 
         let missing_episodes: Vec<_> = episodes.into_iter().filter(|e| !e.has_file).collect();
+        
+        // Filter out episodes that haven't aired if check_aired is enabled
+        let missing_episodes: Vec<_> = if self.check_aired {
+            missing_episodes.into_iter().filter(|e| e.can_prefetch(true)).collect()
+        } else {
+            missing_episodes
+        };
+        
         let pairs: Vec<EpisodeRef> = missing_episodes
             .iter()
             .map(|e| EpisodeRef::new(e.season_number, e.episode_number))
@@ -187,7 +198,7 @@ impl Actor {
             for season_num in season_numbers {
                 if let Err(err) = self
                     .sonarr_client
-                    .search_season(&mut series, season_num)
+                    .search_season(&mut series, season_num, self.check_aired)
                     .await
                 {
                     error!("skip searching for season {season_num}: {err:#}");
@@ -364,6 +375,7 @@ mod test {
             prefetch_num,
             false,
             None,
+            false,
             Some(queue as Arc<dyn Queue + Send + Sync>),
             has_pending,
             pending_ttl,
@@ -394,7 +406,7 @@ mod test {
     }
 
     fn actor(fake: &FakeSonarr, prefetch_num: usize, request_seasons: bool) -> super::Actor {
-        actor_with_tag(fake, prefetch_num, request_seasons, None)
+        actor_with_tag(fake, prefetch_num, request_seasons, None, false)
     }
 
     fn actor_with_tag(
@@ -402,6 +414,7 @@ mod test {
         prefetch_num: usize,
         request_seasons: bool,
         exclude_tag: Option<String>,
+        check_aired: bool,
     ) -> super::Actor {
         let (_tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(fake.url(), "secret").unwrap();
@@ -412,6 +425,7 @@ mod test {
             prefetch_num,
             request_seasons,
             exclude_tag,
+            check_aired,
             None,
             Arc::new(AtomicBool::new(false)),
             Duration::from_secs(3600),
@@ -683,7 +697,7 @@ mod test {
         fake.add_series(series);
         fake.add_episodes(default_episodes());
 
-        actor_with_tag(&fake, 2, true, Some("no-prefetch".to_string()))
+        actor_with_tag(&fake, 2, true, Some("no-prefetch".to_string()), false)
             .prefetch(NowPlaying {
                 series: Series::Title("TestShow".to_string()),
                 episode: 7,
@@ -706,7 +720,7 @@ mod test {
         fake.add_series(default_series());
         fake.add_episodes(default_episodes());
 
-        actor_with_tag(&fake, 1, true, Some("no-prefetch".to_string()))
+        actor_with_tag(&fake, 1, true, Some("no-prefetch".to_string()), false)
             .prefetch(NowPlaying {
                 series: Series::Title("TestShow".to_string()),
                 episode: 7,
@@ -729,7 +743,7 @@ mod test {
         fake.add_series(series);
         fake.add_episodes(default_episodes());
 
-        actor_with_tag(&fake, 1, true, Some("no-prefetch".to_string()))
+        actor_with_tag(&fake, 1, true, Some("no-prefetch".to_string()), false)
             .prefetch(NowPlaying {
                 series: Series::Title("TestShow".to_string()),
                 episode: 7,
@@ -1030,6 +1044,130 @@ mod test {
 
         // No has_pending observable here, but no panic either.
         // The Sonarr search still happened, and that's covered by other tests.
+        Ok(())
+    }
+
+    // When check_aired is enabled, episodes with future air dates are not prefetched
+    #[tokio::test]
+    #[test_log::test]
+    async fn check_aired_skips_future_episodes() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::fake_sonarr::make_episode_with_airdate;
+        
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        
+        // Create episodes where s01e08 has a future air date
+        let mut eps = vec![];
+        for s in 1..=2 {
+            for e in 1..=8 {
+                let air_date = if s == 1 && e == 8 {
+                    Some("2099-01-01T00:00:00Z") // Future date
+                } else {
+                    None // No air date or past date
+                };
+                eps.push(make_episode_with_airdate(s * 10 + e, 1234, s, e, false, air_date));
+            }
+        }
+        fake.add_episodes(eps);
+
+        // Test with check_aired enabled
+        let mut actor = actor_with_tag(&fake, 2, false, None, true);
+        actor.prefetch(NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+            ..np_default()
+        })
+        .await?;
+
+        // s01e08 has a future air date, so it should not be monitored or searched
+        assert!(!fake.episode(18)["monitored"].as_bool().unwrap());
+        // s02e01 should still be processed (no future air date)
+        assert!(fake.episode(21)["monitored"].as_bool().unwrap());
+        
+        Ok(())
+    }
+
+    // When check_aired is disabled, episodes with future air dates are still prefetched
+    #[tokio::test]
+    #[test_log::test]
+    async fn check_aired_disabled_processes_all() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::fake_sonarr::make_episode_with_airdate;
+        
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        
+        // Create episodes where s01e08 has a future air date
+        let mut eps = vec![];
+        for s in 1..=2 {
+            for e in 1..=8 {
+                let air_date = if s == 1 && e == 8 {
+                    Some("2099-01-01T00:00:00Z") // Future date
+                } else {
+                    None // No air date or past date
+                };
+                eps.push(make_episode_with_airdate(s * 10 + e, 1234, s, e, false, air_date));
+            }
+        }
+        fake.add_episodes(eps);
+
+        // Test with check_aired disabled (default)
+        let mut actor = actor_with_tag(&fake, 2, false, None, false);
+        actor.prefetch(NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+            ..np_default()
+        })
+        .await?;
+
+        // Both episodes should be monitored and searched when check_aired is disabled
+        assert!(fake.episode(18)["monitored"].as_bool().unwrap());
+        assert!(fake.episode(21)["monitored"].as_bool().unwrap());
+        
+        Ok(())
+    }
+
+    // When check_aired is enabled with request_seasons, unaired episodes in fully aired
+    // seasons are NOT monitored during season search
+    #[tokio::test]
+    #[test_log::test]
+    async fn check_aired_with_season_search() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::fake_sonarr::make_episode_with_airdate;
+        
+        let fake = FakeSonarr::start().await;
+        let mut series = default_series();
+        // Make season 1 fully aired (no next_airing)
+        series["seasons"][1] = make_season(1, false, true);
+        fake.add_series(series);
+        
+        // Create episodes where s01e08 has a future air date
+        let mut eps = vec![];
+        for e in 1..=8 {
+            let air_date = if e == 8 {
+                Some("2099-01-01T00:00:00Z") // Future date
+            } else {
+                None // No air date or past date
+            };
+            eps.push(make_episode_with_airdate(10 + e, 1234, 1, e, false, air_date));
+        }
+        fake.add_episodes(eps);
+
+        // Test with check_aired enabled and request_seasons enabled
+        let mut actor = actor_with_tag(&fake, 2, true, None, true);
+        actor.prefetch(NowPlaying {
+            series: Series::Title("TestShow".to_string()),
+            episode: 7,
+            season: 1,
+            ..np_default()
+        })
+        .await?;
+
+        // s01e08 has a future air date, so it should NOT be monitored even with season search
+        assert!(!fake.episode(18)["monitored"].as_bool().unwrap());
+        // s01e07 should be monitored (no future air date)
+        assert!(fake.episode(17)["monitored"].as_bool().unwrap());
+        
         Ok(())
     }
 }

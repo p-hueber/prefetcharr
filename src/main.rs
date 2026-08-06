@@ -225,6 +225,7 @@ async fn run(config: Config) -> anyhow::Result<()> {
         config.prefetch_num,
         config.request_seasons,
         config.sonarr.exclude_tag,
+        config.check_aired,
         queue,
         has_pending,
         pending_ttl,

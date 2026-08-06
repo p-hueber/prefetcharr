@@ -42,6 +42,7 @@ services:
         append_to_queue = false  # Experimental: Append upcoming episodes to the player's active queue.
                                  # Not supported by all clients. Not compatible with Tautulli.
         connection_retries = 6   # Number of retries for the initial connection probing
+        check_aired = false       # Skip episodes that haven't aired yet (uses Sonarr airDate)
 
         [media_server]
         type = "Jellyfin"                       # `Jellyfin`, `Emby`, `Plex` or `Tautulli`
@@ -70,6 +71,16 @@ command-line flag. For the Docker container, provide the entire configuration
 via the `PREFETCHARR_CONFIG` environment variable.
 A complete example can be found in the installation instructions for
 `docker-compose` above.
+
+### Configuration Options
+
+#### `check_aired`
+
+When `check_aired` is enabled (`true`), _prefetcharr_ will only prefetch episodes
+that have already aired according to their `airDate` field in Sonarr. This prevents
+attempting to download episodes that haven't been released yet. When disabled
+(`false`, the default), all missing episodes are prefetched regardless of their
+air date. Episodes without an `airDate` field are always considered to have aired.
 
 ### API keys
 
