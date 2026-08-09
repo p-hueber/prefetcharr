@@ -70,6 +70,9 @@ pub struct Config {
     /// Append upcoming episodes to the active player queue
     #[serde(default)]
     pub append_to_queue: bool,
+    /// Check if episodes have aired before prefetching (disabled by default)
+    #[serde(default)]
+    pub check_aired: bool,
     #[serde(default)]
     pub legacy: bool,
 }
@@ -112,6 +115,7 @@ impl From<LegacyArgs> for Config {
             request_seasons: true,
             connection_retries,
             append_to_queue: false,
+            check_aired: false,
             legacy: true,
         }
     }

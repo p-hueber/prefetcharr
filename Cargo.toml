@@ -12,6 +12,7 @@ rust-version = "1.88.0"
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env", "string"] }
 futures = { version = "0.3.31", default-features = false, features = ["std"] }
+time = { version = "0.3", features = ["parsing", "formatting"] }
 reqwest = { version = "0", default-features = false, features = ["charset", "http2", "json", "query", "rustls"] }
 rustls = { version = "0.23.23", default-features = false }
 rustls-platform-verifier = "0.7"
