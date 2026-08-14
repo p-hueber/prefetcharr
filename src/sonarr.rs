@@ -241,7 +241,7 @@ impl Client {
 
     // Make sure all newly announced episodes will be monitored.
     // https://forums.sonarr.tv/t/season-monitor-toggle-option-that-doesnt-change-the-existing-episode-state/30098/9
-    pub async fn monitor_unannounced_episodes(&self, series: &mut SeriesResource) -> Result<()> {
+    pub async fn monitor_unannounced_episodes(&self, series: &mut SeriesResource, check_aired: bool) -> Result<()> {
         // Make series eligible for monitoring checks
         series.monitored = true;
 
@@ -255,7 +255,19 @@ impl Client {
 
         if let Some(last_season) = series.seasons.last() {
             // Apply monitoring but restore episode state
-            let original_episodes = self.episodes_season(series, last_season).await?;
+            let mut original_episodes = self.episodes_season(series, last_season).await?;
+            // When check_aired is enabled, only monitor episodes that can be prefetched
+            // When disabled, monitor all episodes (original behavior)
+            if check_aired {
+                for e in &mut original_episodes {
+                    // Only monitor episodes that can be prefetched (have valid past air dates)
+                    e.monitored = e.can_prefetch(true);
+                }
+            } else {
+                for e in &mut original_episodes {
+                    e.monitored = true;
+                }
+            }
             self.put_series(series).await?;
             self.update_episode_monitoring(&original_episodes).await?;
         } else {
@@ -281,6 +293,7 @@ impl Client {
         &self,
         series: &mut SeriesResource,
         season_num: i32,
+        check_aired: bool,
     ) -> Result<serde_json::Value> {
         info!(num = season_num, "Searching season");
 
@@ -291,7 +304,9 @@ impl Client {
         if season.monitored {
             let mut season_episodes = self.episodes_season(series, season).await?;
             for e in &mut season_episodes {
-                e.monitored = true;
+                if !check_aired || e.can_prefetch(true) {
+                    e.monitored = true;
+                }
             }
             self.update_episode_monitoring(&season_episodes).await?;
         }
@@ -384,6 +399,66 @@ pub struct EpisodeResource {
     pub monitored: bool,
     #[serde(flatten)]
     other: serde_json::Value,
+}
+
+impl EpisodeResource {
+    /// Get the air date string, trying airDateUtc first (RFC3339 format), then airDate
+    fn get_air_date_str(&self) -> Option<&str> {
+        // Try airDateUtc first as it's in proper RFC3339 format
+        self.other.get("airDateUtc")
+            .and_then(|v| v.as_str())
+            .or_else(|| {
+                // Fall back to airDate
+                self.other.get("airDate")
+                    .and_then(|v| v.as_str())
+            })
+    }
+
+    /// Check if the episode has aired based on its airDate field
+    pub fn has_aired(&self) -> bool {
+        let air_date_str = self.get_air_date_str();
+        
+        match air_date_str {
+            None => true, // No air date info, assume aired
+            Some(date_str) => {
+                // Parse ISO 8601/RFC3339 date string
+                if let Ok(air_date) = time::OffsetDateTime::parse(date_str, &time::format_description::well_known::Rfc3339) {
+                    let now = time::OffsetDateTime::now_utc();
+                    air_date <= now
+                } else {
+                    // If parsing fails, assume it has aired
+                    true
+                }
+            }
+        }
+    }
+    
+    /// Check if the episode can be prefetched based on air date and check_aired setting
+    /// When check_aired is true, only prefetch episodes with valid past/future air dates
+    /// that have already aired. Episodes without air dates are excluded.
+    /// When check_aired is false, all episodes can be prefetched (original behavior).
+    pub fn can_prefetch(&self, check_aired: bool) -> bool {
+        if !check_aired {
+            return true;
+        }
+        
+        // When check_aired is true, only prefetch episodes with valid air dates that have aired
+        let air_date_str = self.get_air_date_str();
+        
+        match air_date_str {
+            None => false, // No air date info, don't prefetch when check_aired is true
+            Some(date_str) => {
+                // Parse ISO 8601/RFC3339 date string
+                if let Ok(air_date) = time::OffsetDateTime::parse(date_str, &time::format_description::well_known::Rfc3339) {
+                    let now = time::OffsetDateTime::now_utc();
+                    air_date <= now
+                } else {
+                    // If parsing fails, don't prefetch (we can't verify the air date)
+                    false
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -770,7 +845,7 @@ mod test {
             })
             .await;
 
-        client.search_season(&mut series, 1).await?;
+        client.search_season(&mut series, 1, false).await?;
 
         series_mock.assert_async().await;
         command_mock.assert_async().await;
@@ -846,7 +921,7 @@ mod test {
 
         let client = super::Client::new(&server.url("/pathprefix"), "secret")?;
 
-        client.search_season(&mut series, 1).await?;
+        client.search_season(&mut series, 1, false).await?;
 
         episodes_mock.assert_async().await;
         monitor_mock.assert_async().await;
@@ -1189,5 +1264,67 @@ mod test {
             other: Value::Null,
         };
         assert!(season.is_fully_aired());
+    }
+
+    // Episode with no airDate field is considered to have aired
+    #[test]
+    fn episode_has_aired_no_airdate() {
+        let episode = EpisodeResource {
+            id: 1,
+            season_number: 1,
+            episode_number: 1,
+            has_file: false,
+            monitored: false,
+            other: Value::Null,
+        };
+        assert!(episode.has_aired());
+    }
+
+    // Episode with past airDate is considered to have aired
+    #[test]
+    fn episode_has_aired_past_date() {
+        let mut other = serde_json::Map::new();
+        other.insert("airDate".to_string(), json!("2020-01-01T00:00:00Z"));
+        let episode = EpisodeResource {
+            id: 1,
+            season_number: 1,
+            episode_number: 1,
+            has_file: false,
+            monitored: false,
+            other: Value::Object(other),
+        };
+        assert!(episode.has_aired());
+    }
+
+    // Episode with future airDate is not considered to have aired
+    #[test]
+    fn episode_not_aired_future_date() {
+        let mut other = serde_json::Map::new();
+        other.insert("airDate".to_string(), json!("2099-01-01T00:00:00Z"));
+        let episode = EpisodeResource {
+            id: 1,
+            season_number: 1,
+            episode_number: 1,
+            has_file: false,
+            monitored: false,
+            other: Value::Object(other),
+        };
+        assert!(!episode.has_aired());
+    }
+
+    // Episode with invalid airDate format is considered to have aired
+    #[test]
+    fn episode_has_aired_invalid_date() {
+        let mut other = serde_json::Map::new();
+        other.insert("airDate".to_string(), json!("invalid-date"));
+        let episode = EpisodeResource {
+            id: 1,
+            season_number: 1,
+            episode_number: 1,
+            has_file: false,
+            monitored: false,
+            other: Value::Object(other),
+        };
+        assert!(episode.has_aired());
     }
 }
