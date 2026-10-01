@@ -28,6 +28,8 @@ pub struct Sonarr {
     pub api_key: String,
     /// Exclude series by tag
     pub exclude_tag: Option<String>,
+    /// Tag to apply to a series when episodes are prefetched for it
+    pub apply_tag: Option<String>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -101,6 +103,7 @@ impl From<LegacyArgs> for Config {
             url: sonarr_url,
             api_key: sonarr_api_key,
             exclude_tag: None,
+            apply_tag: None,
         };
         Config {
             media_server,

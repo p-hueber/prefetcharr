@@ -33,6 +33,7 @@ pub struct Actor {
     prefetch_num: usize,
     request_seasons: bool,
     exclude_tag: Option<sonarr::Tag>,
+    apply_tag: Option<sonarr::Tag>,
     queue: Option<Arc<dyn Queue + Send + Sync>>,
     pending: HashMap<String, Pending>,
     has_pending: Arc<AtomicBool>,
@@ -48,11 +49,13 @@ impl Actor {
         prefetch_num: usize,
         request_seasons: bool,
         exclude_tag: Option<String>,
+        apply_tag: Option<String>,
         queue: Option<Arc<dyn Queue + Send + Sync>>,
         has_pending: Arc<AtomicBool>,
         pending_ttl: Duration,
     ) -> Self {
         let exclude_tag = exclude_tag.map(sonarr::Tag::from);
+        let apply_tag = apply_tag.map(sonarr::Tag::from);
         Self {
             rx,
             sonarr_client,
@@ -60,6 +63,7 @@ impl Actor {
             prefetch_num,
             request_seasons,
             exclude_tag,
+            apply_tag,
             queue,
             pending: HashMap::new(),
             has_pending,
@@ -118,6 +122,27 @@ impl Actor {
         result.map(|_| ())
     }
 
+    /// Tag the series when configured, marking that episodes were prefetched
+    /// for it. Best-effort: a failing tag update is logged and does not
+    /// fail the prefetch.
+    async fn apply_tag(&mut self, series: &mut sonarr::SeriesResource) {
+        let Some(tag) = &mut self.apply_tag else {
+            return;
+        };
+        self.sonarr_client.update_tag(tag).await;
+        let sonarr::Tag::Id(id) = tag else {
+            return;
+        };
+        if series.tags.as_ref().is_some_and(|tags| tags.contains(id)) {
+            return;
+        }
+        info!(tag = *id, "applying tag");
+        series.tags.get_or_insert_with(Vec::new).push(*id);
+        if let Err(err) = self.sonarr_client.put_series(series).await {
+            error!(err = ?err, "failed to apply tag");
+        }
+    }
+
     async fn run_prefetch(&mut self, np: &NowPlaying) -> anyhow::Result<Option<Vec<EpisodeRef>>> {
         if !self.seen.once(PrefetchKey::from(np)) {
             debug!(now_playing = ?np, "skip previously processed item");
@@ -154,9 +179,11 @@ impl Actor {
             self.sonarr_client
                 .monitor_unannounced_episodes(&mut series)
                 .await?;
+            self.apply_tag(&mut series).await;
         } else if !series.monitored {
             series.monitored = true;
             self.sonarr_client.put_series(&series).await?;
+            self.apply_tag(&mut series).await;
         }
 
         let missing_episodes: Vec<_> = episodes.into_iter().filter(|e| !e.has_file).collect();
@@ -192,6 +219,8 @@ impl Actor {
                 {
                     error!("skip searching for season {season_num}: {err:#}");
                     error = true;
+                } else {
+                    self.apply_tag(&mut series).await;
                 }
             }
             if error {
@@ -215,6 +244,7 @@ impl Actor {
             self.sonarr_client
                 .search_episodes(&episodes_to_search)
                 .await?;
+            self.apply_tag(&mut series).await;
         }
 
         Ok(Some(pairs))
@@ -364,6 +394,7 @@ mod test {
             prefetch_num,
             false,
             None,
+            None,
             Some(queue as Arc<dyn Queue + Send + Sync>),
             has_pending,
             pending_ttl,
@@ -403,6 +434,25 @@ mod test {
         request_seasons: bool,
         exclude_tag: Option<String>,
     ) -> super::Actor {
+        actor_with_tags(fake, prefetch_num, request_seasons, exclude_tag, None)
+    }
+
+    fn actor_with_apply_tag(
+        fake: &FakeSonarr,
+        prefetch_num: usize,
+        request_seasons: bool,
+        apply_tag: Option<String>,
+    ) -> super::Actor {
+        actor_with_tags(fake, prefetch_num, request_seasons, None, apply_tag)
+    }
+
+    fn actor_with_tags(
+        fake: &FakeSonarr,
+        prefetch_num: usize,
+        request_seasons: bool,
+        exclude_tag: Option<String>,
+        apply_tag: Option<String>,
+    ) -> super::Actor {
         let (_tx, rx) = mpsc::channel(1);
         let sonarr = crate::sonarr::Client::new(fake.url(), "secret").unwrap();
         super::Actor::new(
@@ -412,6 +462,7 @@ mod test {
             prefetch_num,
             request_seasons,
             exclude_tag,
+            apply_tag,
             None,
             Arc::new(AtomicBool::new(false)),
             Duration::from_secs(3600),
@@ -739,6 +790,76 @@ mod test {
             .await?;
 
         assert!(!fake.commands().is_empty());
+        Ok(())
+    }
+
+    // Configured tag is applied to the series when episodes are prefetched
+    #[tokio::test]
+    #[test_log::test]
+    async fn apply_tag_tags_series_on_prefetch() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_tag(2, "prefetched");
+        fake.add_series(default_series());
+        fake.add_episodes(default_episodes());
+
+        actor_with_apply_tag(&fake, 2, true, Some("prefetched".to_string()))
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 7,
+                season: 1,
+                ..np_default()
+            })
+            .await?;
+
+        assert!(!fake.commands().is_empty());
+        assert_eq!(fake.series_state(1234)["tags"], json!([2]));
+        Ok(())
+    }
+
+    // Tag is not duplicated when the series already has it
+    #[tokio::test]
+    #[test_log::test]
+    async fn apply_tag_skips_when_already_tagged() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_tag(2, "prefetched");
+        let mut series = default_series();
+        series["tags"] = json!([2]);
+        fake.add_series(series);
+        fake.add_episodes(default_episodes());
+
+        actor_with_apply_tag(&fake, 2, true, Some("prefetched".to_string()))
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 7,
+                season: 1,
+                ..np_default()
+            })
+            .await?;
+
+        assert!(!fake.commands().is_empty());
+        assert_eq!(fake.series_state(1234)["tags"], json!([2]));
+        Ok(())
+    }
+
+    // Unknown tag label: prefetch still works and the series is left untagged
+    #[tokio::test]
+    #[test_log::test]
+    async fn apply_tag_unresolved_keeps_working() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        fake.add_episodes(default_episodes());
+
+        actor_with_apply_tag(&fake, 2, true, Some("prefetched".to_string()))
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 7,
+                season: 1,
+                ..np_default()
+            })
+            .await?;
+
+        assert!(!fake.commands().is_empty());
+        assert!(fake.series_state(1234)["tags"].is_null());
         Ok(())
     }
 
