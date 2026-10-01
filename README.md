@@ -54,6 +54,7 @@ services:
         url = "http://example.com/sonarr" # Sonarr baseurl
         api_key = "<YOUR KEY HERE>"       # Sonarr API key
         # exclude_tag = "no_prefetch"     # Optional: Exclude series by tag
+        # apply_tag = "prefetched"        # Optional: Tag series when episodes are prefetched for them
 
     volumes:
       - /path/to/log/dir:/log
