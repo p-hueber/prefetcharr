@@ -243,22 +243,27 @@ pub mod test {
     impl ProvideNowPlaying for Mock {
         type Session = Option<NowPlaying>;
 
-        async fn sessions(&self) -> anyhow::Result<Vec<Self::Session>> {
+        fn sessions(
+            &self,
+        ) -> impl std::future::Future<Output = anyhow::Result<Vec<Self::Session>>> + Send {
             let head = if self.bad_session {
                 vec![None]
             } else {
                 Vec::new()
             };
             let np = now_playing().into_iter().map(Some).collect();
-            if self.bad_call {
+            ready(if self.bad_call {
                 Err(anyhow!("API error"))
             } else {
                 Ok([head, np].concat())
-            }
+            })
         }
 
-        async fn extract(&self, session: Self::Session) -> anyhow::Result<NowPlaying> {
-            session.ok_or_else(|| anyhow!("no session"))
+        fn extract(
+            &self,
+            session: Self::Session,
+        ) -> impl std::future::Future<Output = anyhow::Result<NowPlaying>> + Send {
+            ready(session.ok_or_else(|| anyhow!("no session")))
         }
     }
 
