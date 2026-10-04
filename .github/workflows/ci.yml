@@ -29,6 +29,16 @@ jobs:
 
   cargo-deny:
     runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        checks:
+          - advisories
+          - bans licenses sources
+    # New advisories against existing dependencies must not block PRs.
+    # advisories.yml reports them for main.
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
     steps:
     - uses: actions/checkout@v7
     - uses: EmbarkStudios/cargo-deny-action@v2
+      with:
+        command: check ${{ matrix.checks }}
