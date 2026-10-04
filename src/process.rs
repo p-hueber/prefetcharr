@@ -567,7 +567,7 @@ mod test {
             .await?;
 
         assert!(!fake.series_state(1234)["monitored"].as_bool().unwrap());
-        assert!(fake.commands().is_empty());
+        assert_eq!(fake.commands(), Vec::<serde_json::Value>::new());
         Ok(())
     }
 
@@ -693,7 +693,7 @@ mod test {
             .await?;
 
         assert!(!fake.series_state(1234)["monitored"].as_bool().unwrap());
-        assert!(fake.commands().is_empty());
+        assert_eq!(fake.commands(), Vec::<serde_json::Value>::new());
         Ok(())
     }
 
@@ -715,7 +715,7 @@ mod test {
             })
             .await?;
 
-        assert!(!fake.commands().is_empty());
+        assert_ne!(fake.commands(), Vec::<serde_json::Value>::new());
         Ok(())
     }
 
@@ -738,7 +738,7 @@ mod test {
             })
             .await?;
 
-        assert!(!fake.commands().is_empty());
+        assert_ne!(fake.commands(), Vec::<serde_json::Value>::new());
         Ok(())
     }
 
@@ -785,7 +785,7 @@ mod test {
             })
             .await?;
 
-        assert!(!fake.commands().is_empty());
+        assert_ne!(fake.commands(), Vec::<serde_json::Value>::new());
         Ok(())
     }
 

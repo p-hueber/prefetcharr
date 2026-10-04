@@ -60,6 +60,38 @@ pub struct Episode {
     library_name: String,
 }
 
+impl TryFrom<Episode> for NowPlaying {
+    type Error = anyhow::Error;
+
+    fn try_from(session: Episode) -> Result<Self> {
+        if session.media_type != "episode" {
+            bail!("not an episode");
+        }
+        let episode = session.media_index;
+        let season = session.parent_media_index;
+
+        let tvdb_id = session.grandparent_guids.iter().find_map(|uri| {
+            let (provider, id) = uri.split_once("://")?;
+            (provider == "tvdb").then_some(id.parse().ok()?)
+        });
+        let series = match tvdb_id {
+            Some(id) => super::Series::Tvdb(id),
+            None => super::Series::Title(session.grandparent_title),
+        };
+        let user = session.user.into();
+        let library = Some(session.library_name);
+
+        Ok(Self {
+            series,
+            episode,
+            season,
+            user,
+            library,
+            session_id: None,
+        })
+    }
+}
+
 pub struct Client {
     http: reqwest::Client,
     url: reqwest::Url,
@@ -135,32 +167,11 @@ impl ProvideNowPlaying for Client {
             .collect())
     }
 
-    async fn extract(&self, session: Self::Session) -> anyhow::Result<NowPlaying> {
-        if session.media_type != "episode" {
-            bail!("not an episode");
-        }
-        let episode = session.media_index;
-        let season = session.parent_media_index;
-
-        let tvdb_id = session.grandparent_guids.iter().find_map(|uri| {
-            let (provider, id) = uri.split_once("://")?;
-            (provider == "tvdb").then_some(id.parse().ok()?)
-        });
-        let series = match tvdb_id {
-            Some(id) => super::Series::Tvdb(id),
-            None => super::Series::Title(session.grandparent_title),
-        };
-        let user = session.user.into();
-        let library = Some(session.library_name);
-
-        Ok(NowPlaying {
-            series,
-            episode,
-            season,
-            user,
-            library,
-            session_id: None,
-        })
+    fn extract(
+        &self,
+        session: Self::Session,
+    ) -> impl std::future::Future<Output = anyhow::Result<NowPlaying>> + Send {
+        std::future::ready(session.try_into())
     }
 }
 
@@ -541,7 +552,7 @@ mod test {
 
         let client = tautulli::Client::new(&server.url("/pathprefix"), "secret")?;
         let sessions = client.sessions().await?;
-        assert!(sessions.is_empty());
+        assert_eq!(sessions, []);
 
         Ok(())
     }
