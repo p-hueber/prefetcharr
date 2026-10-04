@@ -8,7 +8,7 @@ use reqwest::header::{HeaderMap, HeaderValue};
 use rustls_platform_verifier::ConfigVerifierExt;
 use serde::{Deserialize, Deserializer, de, de::DeserializeOwned};
 use serde_json::Value;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use super::{NowPlaying, ProvideNowPlaying};
 
@@ -156,6 +156,14 @@ impl ProvideNowPlaying for Client {
 
         Ok(sessions
             .iter()
+            .filter(|s| {
+                let media_type = s.get("media_type").and_then(Value::as_str);
+                let is_episode = media_type == Some("episode");
+                if !is_episode {
+                    debug!(media_type, "Skipping non-episode Tautulli session");
+                }
+                is_episode
+            })
             .cloned()
             .map(serde_json::value::from_value)
             .inspect(|r| {
@@ -459,9 +467,9 @@ mod test {
         Ok(())
     }
 
-    // Non-episode sessions (e.g. movies) are rejected by extract
+    // Non-episode sessions (e.g. movies) are skipped before deserialization
     #[tokio::test]
-    async fn extract_rejects_non_episode() -> Result<(), Box<dyn std::error::Error>> {
+    async fn skip_non_episode_sessions() -> Result<(), Box<dyn std::error::Error>> {
         let server = httpmock::MockServer::start_async().await;
 
         server
@@ -473,10 +481,10 @@ mod test {
                         "response": {
                             "data": {
                                 "sessions": [{
-                                    "grandparent_title": "Some Movie",
+                                    "grandparent_title": "",
                                     "grandparent_guids": [],
-                                    "media_index": "0",
-                                    "parent_media_index": "0",
+                                    "media_index": "",
+                                    "parent_media_index": "",
                                     "media_type": "movie",
                                     "user_id": 29344801,
                                     "username": "user",
@@ -490,8 +498,7 @@ mod test {
             .await;
 
         let client = tautulli::Client::new(&server.url("/pathprefix"), "secret")?;
-        let session = client.sessions().await?.into_iter().next().unwrap();
-        assert!(client.extract(session).await.is_err());
+        assert_eq!(client.sessions().await?, []);
 
         Ok(())
     }
