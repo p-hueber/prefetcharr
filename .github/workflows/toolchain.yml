@@ -1,0 +1,27 @@
+name: toolchain
+
+on:
+  schedule:
+  - cron: "17 23 * * 1"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  latest-stable:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: main
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy, rustfmt
+    - name: Run rustfmt
+      run: cargo fmt --check
+    - name: Run Clippy
+      run: cargo clippy --all-targets --all-features
+    - name: Run tests
+      run: cargo test
