@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - name: Run rustfmt
       run: cargo fmt --check
     - name: Run Clippy
@@ -26,5 +26,5 @@ jobs:
   cargo-deny:
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
     - uses: EmbarkStudios/cargo-deny-action@v2
