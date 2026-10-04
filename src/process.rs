@@ -811,7 +811,7 @@ mod test {
             })
             .await?;
 
-        assert!(!fake.commands().is_empty());
+        assert_ne!(fake.commands(), Vec::<serde_json::Value>::new());
         assert_eq!(fake.series_state(1234)["tags"], json!([2]));
         Ok(())
     }
@@ -836,7 +836,7 @@ mod test {
             })
             .await?;
 
-        assert!(!fake.commands().is_empty());
+        assert_ne!(fake.commands(), Vec::<serde_json::Value>::new());
         assert_eq!(fake.series_state(1234)["tags"], json!([2]));
         Ok(())
     }
@@ -858,7 +858,7 @@ mod test {
             })
             .await?;
 
-        assert!(!fake.commands().is_empty());
+        assert_ne!(fake.commands(), Vec::<serde_json::Value>::new());
         assert!(fake.series_state(1234)["tags"].is_null());
         Ok(())
     }
