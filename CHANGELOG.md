@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- Tautulli: playing movies or other non-episode media no longer logs a
+  deserialization warning on every poll.
+
 
 ## [1.6.2] - 2026-07-19
 
