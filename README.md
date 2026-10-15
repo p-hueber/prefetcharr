@@ -37,7 +37,8 @@ services:
         interval = 900           # Polling interval in seconds
         log_dir = "/log"         # Logging directory
         log_level = "Debug"      # `Trace`, `Debug`, `Info`, `Warn` or `Error`
-        prefetch_num = 2         # Number of episodes to make available in advance
+        prefetch_num = 2         # Number of episodes to make available in advance, given as an
+                                 # absolute number or a percentage of the season (e.g. "50%")
         request_seasons = true   # Always request full seasons to prefer season packs
         append_to_queue = false  # Experimental: Append upcoming episodes to the player's active queue.
                                  # Not supported by all clients. Not compatible with Tautulli.

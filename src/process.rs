@@ -13,6 +13,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     Message,
+    config::PrefetchNum,
     media_server::{EpisodeRef, NowPlaying, PrefetchKey, Queue, Series},
     sonarr,
     util::once::Seen,
@@ -30,7 +31,7 @@ pub struct Actor {
     rx: mpsc::Receiver<Message>,
     sonarr_client: sonarr::Client,
     seen: Seen<PrefetchKey>,
-    prefetch_num: usize,
+    prefetch_num: PrefetchNum,
     request_seasons: bool,
     exclude_tag: Option<sonarr::Tag>,
     apply_tag: Option<sonarr::Tag>,
@@ -46,7 +47,7 @@ impl Actor {
         rx: mpsc::Receiver<Message>,
         sonarr_client: sonarr::Client,
         seen: Seen<PrefetchKey>,
-        prefetch_num: usize,
+        prefetch_num: PrefetchNum,
         request_seasons: bool,
         exclude_tag: Option<String>,
         apply_tag: Option<String>,
@@ -169,12 +170,12 @@ impl Actor {
         }
 
         // fetch n next episodes
-        let episodes = self
+        let (episodes, prefetch_num) = self
             .sonarr_client
             .episode_range(&series, np.season, np.episode, self.prefetch_num)
             .await?;
 
-        if episodes.len() < self.prefetch_num {
+        if episodes.len() < prefetch_num {
             info!("Not as many episodes announced, monitor new items instead");
             self.sonarr_client
                 .monitor_unannounced_episodes(&mut series)
@@ -336,6 +337,7 @@ mod test {
     use tokio::sync::mpsc;
 
     use crate::{
+        config::PrefetchNum,
         fake_sonarr::{FakeSonarr, make_episode, make_season, make_series},
         media_server::{EpisodeRef, NowPlaying, Queue, Series, test::np_default},
         util::once,
@@ -391,7 +393,7 @@ mod test {
             rx,
             sonarr,
             once::Seen::default(),
-            prefetch_num,
+            PrefetchNum::Count(prefetch_num),
             false,
             None,
             None,
@@ -459,7 +461,7 @@ mod test {
             rx,
             sonarr,
             once::Seen::default(),
-            prefetch_num,
+            PrefetchNum::Count(prefetch_num),
             request_seasons,
             exclude_tag,
             apply_tag,
@@ -467,6 +469,68 @@ mod test {
             Arc::new(AtomicBool::new(false)),
             Duration::from_secs(3600),
         )
+    }
+
+    fn actor_percent(fake: &FakeSonarr, percent: u8) -> super::Actor {
+        let (_tx, rx) = mpsc::channel(1);
+        let sonarr = crate::sonarr::Client::new(fake.url(), "secret").unwrap();
+        super::Actor::new(
+            rx,
+            sonarr,
+            once::Seen::default(),
+            PrefetchNum::Percent(percent),
+            false,
+            None,
+            None,
+            None,
+            Arc::new(AtomicBool::new(false)),
+            Duration::from_secs(3600),
+        )
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn search_percent() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        fake.add_episodes(default_episodes());
+
+        actor_percent(&fake, 25)
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 3,
+                season: 1,
+                ..np_default()
+            })
+            .await?;
+
+        assert!(fake.episode(14)["monitored"].as_bool().unwrap());
+        assert!(fake.episode(15)["monitored"].as_bool().unwrap());
+        assert!(!fake.episode(16)["monitored"].as_bool().unwrap());
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn search_percent_next_season() -> Result<(), Box<dyn std::error::Error>> {
+        let fake = FakeSonarr::start().await;
+        fake.add_series(default_series());
+        fake.add_episodes(default_episodes());
+
+        actor_percent(&fake, 50)
+            .prefetch(NowPlaying {
+                series: Series::Title("TestShow".to_string()),
+                episode: 6,
+                season: 1,
+                ..np_default()
+            })
+            .await?;
+
+        for id in [17, 18, 21, 22] {
+            assert!(fake.episode(id)["monitored"].as_bool().unwrap());
+        }
+        assert!(!fake.episode(23)["monitored"].as_bool().unwrap());
+        Ok(())
     }
 
     // Prefetching from mid-season triggers season searches for the current and next season
