@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- `prefetch_num` accepts a percentage of the current season (e.g. `"50%"`).
+
 ### Fixed
 
 - Tautulli: playing movies or other non-episode media no longer logs a

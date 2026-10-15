@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use tracing::{debug, error, info, instrument, warn};
 
+use crate::config::PrefetchNum;
+
 #[derive(Debug)]
 pub enum Tag {
     Label(String),
@@ -231,12 +233,17 @@ impl Client {
         series: &SeriesResource,
         season_start: i32,
         episode_start: i32,
-        num: usize,
-    ) -> Result<Vec<EpisodeResource>> {
+        num: PrefetchNum,
+    ) -> Result<(Vec<EpisodeResource>, usize)> {
         let episodes = self.episodes(series).await?;
+        let season_len = episodes
+            .iter()
+            .filter(|e| e.season_number == season_start)
+            .count();
+        let num = num.resolve(season_len);
         let episodes = episode_window(season_start, episode_start, num, episodes);
 
-        Ok(episodes)
+        Ok((episodes, num))
     }
 
     // Make sure all newly announced episodes will be monitored.
