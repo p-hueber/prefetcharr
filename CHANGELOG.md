@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `apply_tag` option to tag series when episodes are prefetched.
 - `prefetch_num` accepts a percentage of the current season (e.g. `"50%"`).
 
 ### Fixed
