@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plex: the notifications WebSocket verifies TLS certificates against the
   system trust store, like all other connections.
 
+### Security
+
+- Update dependencies to reject distrusted emSign intermediates
+  (RUSTSEC-2026-0382, RUSTSEC-2026-0383) and fix unsound `tokio::AsyncFd`
+  constructors (RUSTSEC-2026-0386).
+
 
 ## [1.7.0] - 2026-10-17
 
