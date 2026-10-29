@@ -13,7 +13,7 @@ use rustls_platform_verifier::ConfigVerifierExt;
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::Value;
 use tokio::sync::{OnceCell, RwLock};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{Connector, connect_async_tls_with_config, tungstenite::Message};
 use tracing::{debug, info, warn};
 
 use super::{EpisodeRef, NowPlaying, ProvideNowPlaying};
@@ -389,7 +389,11 @@ async fn notifications_loop(url: String, cache: PlayQueueCache) {
 }
 
 async fn run_notifications(url: &str, cache: &PlayQueueCache) -> Result<()> {
-    let (mut ws, _resp) = connect_async(url).await.context("ws connect")?;
+    let tls = rustls::ClientConfig::with_platform_verifier()?;
+    let (mut ws, _resp) =
+        connect_async_tls_with_config(url, None, false, Some(Connector::Rustls(Arc::new(tls))))
+            .await
+            .context("ws connect")?;
     while let Some(msg) = ws.next().await {
         match msg.context("ws recv")? {
             Message::Text(text) => {
