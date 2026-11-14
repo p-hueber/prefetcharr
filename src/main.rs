@@ -75,6 +75,9 @@ struct LegacyArgs {
     /// Each entry here is checked against the user's ID and name
     #[arg(long, value_name = "USER", value_delimiter = ',', num_args = 0..)]
     users: Vec<String>,
+    /// User IDs or names to exclude from monitoring
+    #[arg(long, value_name = "USER", value_delimiter = ',', num_args = 0..)]
+    exclude_users: Vec<String>,
     /// Number of retries for the initial connection probing
     #[arg(long, value_name = "NUM", default_value_t = 0)]
     connection_retries: usize,
@@ -127,6 +130,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     enable_logging(config.log_dir.as_ref(), config.log_level);
 
     info!("{NAME} {VERSION}");
+
+    let users_in_both_lists = config
+        .media_server
+        .users
+        .iter()
+        .filter(|user| config.media_server.exclude_users.contains(*user))
+        .collect::<Vec<_>>();
+    if !users_in_both_lists.is_empty() {
+        warn!(
+            users = ?users_in_both_lists,
+            "Users listed in both include and exclude lists will not trigger prefetches"
+        );
+    }
 
     if config.legacy {
         warn!(
@@ -211,7 +227,10 @@ async fn run(config: Config) -> anyhow::Result<()> {
         .now_playing_updates(interval, has_pending.clone())
         .inspect_err(|err| error!("Cannot fetch sessions from media server: {err}"))
         .filter_map(async |res| res.ok()) // remove errors
-        .filter(filter::users(config.media_server.users.as_slice()))
+        .filter(filter::users(
+            config.media_server.users.as_slice(),
+            config.media_server.exclude_users.as_slice(),
+        ))
         .filter(filter::libraries(config.media_server.libraries.as_slice()))
         .map(Message::NowPlaying)
         .map(Ok) // align with the error type of `PollSender`

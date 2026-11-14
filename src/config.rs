@@ -15,6 +15,9 @@ pub struct MediaServer {
     /// User IDs or names to monitor episodes for (default: empty/all users)
     #[serde(default)]
     pub users: Vec<String>,
+    /// User IDs or names to exclude from monitoring
+    #[serde(default)]
+    pub exclude_users: Vec<String>,
     /// Library names to monitor episodes for. (default: empty/all libraries)
     #[serde(default)]
     pub libraries: Vec<String>,
@@ -132,6 +135,7 @@ impl From<LegacyArgs> for Config {
             log_dir,
             remaining_episodes,
             users,
+            exclude_users,
             connection_retries,
             libraries,
         }: LegacyArgs,
@@ -141,6 +145,7 @@ impl From<LegacyArgs> for Config {
             url: media_server_url,
             api_key: media_server_api_key,
             users,
+            exclude_users,
             libraries,
         };
         let sonarr = Sonarr {
@@ -166,7 +171,8 @@ impl From<LegacyArgs> for Config {
 
 #[cfg(test)]
 mod test {
-    use super::PrefetchNum;
+    use super::{MediaServer, PrefetchNum};
+    use serde::Deserialize;
 
     #[derive(serde::Deserialize)]
     struct Wrap {
@@ -197,5 +203,48 @@ mod test {
         assert_eq!(PrefetchNum::Percent(10).resolve(8), 1);
         assert_eq!(PrefetchNum::Percent(100).resolve(10), 10);
         assert_eq!(PrefetchNum::Percent(0).resolve(10), 0);
+    }
+
+    #[derive(Deserialize)]
+    struct MediaServerWrap {
+        media_server: MediaServer,
+    }
+
+    fn parse_media_server(value: &str) -> Result<MediaServer, toml::de::Error> {
+        toml::from_str::<MediaServerWrap>(value).map(|config| config.media_server)
+    }
+
+    #[test]
+    fn exclude_users_defaults_to_empty() {
+        let media_server = parse_media_server(
+            r#"
+                [media_server]
+                type = "Plex"
+                url = "http://plex"
+                api_key = "token"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(media_server.exclude_users, Vec::<String>::new());
+    }
+
+    #[test]
+    fn exclude_users_parse_user_names_and_ids() {
+        let media_server = parse_media_server(
+            r#"
+                [media_server]
+                type = "Plex"
+                url = "http://plex"
+                api_key = "token"
+                exclude_users = ["Administrator", "12345"]
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            media_server.exclude_users,
+            ["Administrator".to_string(), "12345".to_string()]
+        );
     }
 }

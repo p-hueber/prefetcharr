@@ -49,6 +49,7 @@ services:
         url = "http://example.com/jellyfin"     # Jellyfin/Emby/Plex/Tautulli baseurl
         api_key = "<YOUR KEY HERE>"             # Jellyfin/Emby/Tautulli API key or plex server token
         # users = [ "John", "12345", "Axel F" ] # Optional: Only monitor sessions for specific user IDs or names
+        # exclude_users = [ "Administrator" ]   # Optional: Ignore sessions for these user IDs or names
         # libraries = [ "TV Shows", "Anime" ]   # Optional: Only monitor sessions for specific libraries
 
         [sonarr]

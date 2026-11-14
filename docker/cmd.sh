@@ -12,6 +12,7 @@ test -z "$PREFETCHARR_CONFIG" -a ! -f /config \
     --interval "${INTERVAL:-900}" \
     --remaining-episodes "${REMAINING_EPISODES:-2}" \
     ${USERS:+--users "${USERS}"} \
+    ${EXCLUDE_USERS:+--exclude-users "${EXCLUDE_USERS}"} \
     ${LIBRARIES:+--libraries "${LIBRARIES}"} \
     --connection-retries 6 
 
