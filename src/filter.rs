@@ -1,21 +1,37 @@
 use std::future::{Ready, ready};
 
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::media_server::NowPlaying;
 
-pub fn users(users: &[String]) -> impl FnMut(&NowPlaying) -> Ready<bool> {
+pub fn users(
+    users: &[String],
+    excluded_users: &[String],
+) -> impl FnMut(&NowPlaying) -> Ready<bool> {
     move |np: &NowPlaying| {
-        let accept =
-            users.is_empty() || users.contains(&np.user.id) || users.contains(&np.user.name);
-        if !accept {
+        let matches_include = users.contains(&np.user.id) || users.contains(&np.user.name);
+        let included = users.is_empty() || matches_include;
+        let excluded =
+            excluded_users.contains(&np.user.id) || excluded_users.contains(&np.user.name);
+        if excluded {
+            if matches_include {
+                warn!(
+                    now_playing = ?np,
+                    ?excluded_users,
+                    "Ignoring session because user matched both include and exclude lists"
+                );
+            }
+            return ready(false);
+        }
+
+        if !included {
             debug!(
                 now_playing = ?np,
                 ?users,
                 "Ignoring session from unwanted user"
             );
         }
-        ready(accept)
+        ready(included)
     }
 }
 
@@ -52,10 +68,10 @@ mod test {
         }
     }
 
-    // Empty user list accepts all sessions
+    // Empty include and exclude lists accept all sessions
     #[tokio::test]
     async fn users_unrestricted() {
-        let mut filter = super::users(&[]);
+        let mut filter = super::users(&[], &[]);
         assert!(filter(&np_default()).await);
     }
 
@@ -63,7 +79,7 @@ mod test {
     #[tokio::test]
     async fn users_accepted_by_name() {
         let users = vec!["Other".to_string(), "User".to_string()];
-        let mut filter = super::users(users.as_slice());
+        let mut filter = super::users(users.as_slice(), &[]);
         let np = NowPlaying {
             user: User {
                 id: "1".to_string(),
@@ -78,7 +94,7 @@ mod test {
     #[tokio::test]
     async fn users_accepted_by_id() {
         let users = vec!["1".to_string(), "2".to_string()];
-        let mut filter = super::users(users.as_slice());
+        let mut filter = super::users(users.as_slice(), &[]);
         let np = NowPlaying {
             user: User {
                 id: "1".to_string(),
@@ -93,9 +109,74 @@ mod test {
     #[tokio::test]
     async fn users_rejected() {
         let users = vec!["Nope".to_string()];
-        let mut filter = super::users(users.as_slice());
+        let mut filter = super::users(users.as_slice(), &[]);
         let np = NowPlaying { ..np_default() };
         assert!(!filter(&np).await);
+    }
+
+    #[tokio::test]
+    async fn users_excluded_by_name() {
+        let excluded_users = vec!["User".to_string()];
+        let mut filter = super::users(&[], excluded_users.as_slice());
+        let np = NowPlaying {
+            user: User {
+                id: "1".to_string(),
+                name: "User".to_string(),
+            },
+            ..np_default()
+        };
+        assert!(!filter(&np).await);
+    }
+
+    #[tokio::test]
+    async fn users_excluded_by_id() {
+        let excluded_users = vec!["1".to_string()];
+        let mut filter = super::users(&[], excluded_users.as_slice());
+        let np = NowPlaying {
+            user: User {
+                id: "1".to_string(),
+                name: "User".to_string(),
+            },
+            ..np_default()
+        };
+        assert!(!filter(&np).await);
+    }
+
+    #[tokio::test]
+    async fn users_excluded_even_when_included() {
+        let users = vec!["User".to_string()];
+        let excluded_users = vec!["User".to_string()];
+        let mut filter = super::users(users.as_slice(), excluded_users.as_slice());
+        let np = NowPlaying {
+            user: User {
+                id: "1".to_string(),
+                name: "User".to_string(),
+            },
+            ..np_default()
+        };
+        assert!(!filter(&np).await);
+    }
+
+    #[tokio::test]
+    async fn exclusions_apply_when_users_are_unrestricted() {
+        let excluded_users = vec!["User".to_string()];
+        let mut filter = super::users(&[], excluded_users.as_slice());
+        let excluded = NowPlaying {
+            user: User {
+                id: "1".to_string(),
+                name: "User".to_string(),
+            },
+            ..np_default()
+        };
+        let included = NowPlaying {
+            user: User {
+                id: "2".to_string(),
+                name: "Other".to_string(),
+            },
+            ..np_default()
+        };
+        assert!(!filter(&excluded).await);
+        assert!(filter(&included).await);
     }
 
     // Empty library list accepts all sessions
